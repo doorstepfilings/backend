@@ -1,0 +1,31 @@
+import { ServiceCategoryEntity } from './service-category.entity';
+import { ServiceDocumentEntity } from './service-document.entity';
+export declare class ServiceEntity {
+    id: number;
+    serviceCategoryId: number;
+    name: string;
+    shortDescription: string | null;
+    slug: string;
+    link: string | null;
+    description: string | null;
+    longDescription: string | null;
+    features: string | null;
+    requirements: string | null;
+    process: string | null;
+    price: string | null;
+    pricingPlans: unknown[] | Record<string, unknown> | null;
+    gstPercentage: string;
+    serviceCode: string | null;
+    serviceType: string;
+    processingDays: number;
+    isActive: boolean;
+    isPopular: boolean;
+    isFeatured: boolean;
+    metadata: Record<string, unknown> | null;
+    faqs: unknown[] | Record<string, unknown> | null;
+    requiredDocumentsList: unknown[] | Record<string, unknown> | null;
+    extraDocuments: unknown[] | Record<string, unknown> | null;
+    adminNotes: string | null;
+    category: ServiceCategoryEntity;
+    documents: ServiceDocumentEntity[];
+}

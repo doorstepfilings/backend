@@ -1,0 +1,25 @@
+<h2>Refund Processed</h2>
+<p>Hello <strong>{{userName}}</strong>,</p>
+<p>Your refund of <strong>₹{{refundAmount}}</strong> has been initiated successfully. Refunds are typically credited within 5–7 business days depending on your bank.</p>
+
+<div class="details-box">
+  <div class="details-row">
+    <span class="label">Original Order ID</span>
+    <span class="value">{{orderUniqueId}}</span>
+  </div>
+  <div class="details-row">
+    <span class="label">Refund Amount</span>
+    <span class="value">₹{{refundAmount}}</span>
+  </div>
+  <div class="details-row">
+    <span class="label">Reason</span>
+    <span class="value">{{refundReason}}</span>
+  </div>
+  <div class="details-row">
+    <span class="label">Status</span>
+    <span class="value">Processing</span>
+  </div>
+</div>
+
+<p>If you have any questions, feel free to contact our support team.</p>
+<a href="{{dashboardUrl}}" class="btn">View Dashboard</a>

@@ -1,0 +1,38 @@
+[31m[Nest] 28408  - [39m02/05/2026, 10:22:38 pm [31m  ERROR[39m [38;5;3m[TypeOrmModule] [39m[31mUnable to connect to the database. Retrying (1)...[39m
+Error: connect ETIMEDOUT
+    at PoolConnection._handleTimeoutError (D:\project\doorstepfilings\doorstepfilings-backend\node_modules\mysql2\lib\base\connection.js:244:17)
+    at listOnTimeout (node:internal/timers:581:17)
+    at process.processTimers (node:internal/timers:519:7)
+[31m[Nest] 28408  - [39m02/05/2026, 10:22:38 pm [31m  ERROR[39m [38;5;3m[TypeOrmModule] [39m[31mUnable to connect to the database. Retrying (2)...[39m
+Error: connect ECONNREFUSED 127.0.0.1:3306
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)
+[31m[Nest] 28408  - [39m02/05/2026, 10:22:38 pm [31m  ERROR[39m [38;5;3m[TypeOrmModule] [39m[31mUnable to connect to the database. Retrying (3)...[39m
+Error: connect ECONNREFUSED 127.0.0.1:3306
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)
+[31m[Nest] 28408  - [39m02/05/2026, 10:22:38 pm [31m  ERROR[39m [38;5;3m[TypeOrmModule] [39m[31mUnable to connect to the database. Retrying (4)...[39m
+Error: connect ECONNREFUSED 127.0.0.1:3306
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)
+[31m[Nest] 28408  - [39m02/05/2026, 10:22:38 pm [31m  ERROR[39m [38;5;3m[TypeOrmModule] [39m[31mUnable to connect to the database. Retrying (5)...[39m
+Error: connect ECONNREFUSED 127.0.0.1:3306
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)
+[31m[Nest] 28408  - [39m02/05/2026, 10:22:38 pm [31m  ERROR[39m [38;5;3m[TypeOrmModule] [39m[31mUnable to connect to the database. Retrying (6)...[39m
+Error: connect ECONNREFUSED 127.0.0.1:3306
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)
+[31m[Nest] 28408  - [39m02/05/2026, 10:22:38 pm [31m  ERROR[39m [38;5;3m[TypeOrmModule] [39m[31mUnable to connect to the database. Retrying (7)...[39m
+Error: connect ECONNREFUSED 127.0.0.1:3306
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)
+[31m[Nest] 28408  - [39m02/05/2026, 10:22:38 pm [31m  ERROR[39m [38;5;3m[TypeOrmModule] [39m[31mUnable to connect to the database. Retrying (8)...[39m
+Error: connect ECONNREFUSED 127.0.0.1:3306
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)
+[31m[Nest] 28408  - [39m02/05/2026, 10:22:38 pm [31m  ERROR[39m [38;5;3m[TypeOrmModule] [39m[31mUnable to connect to the database. Retrying (9)...[39m
+Error: connect ECONNREFUSED 127.0.0.1:3306
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)
+[31m[Nest] 28408  - [39m02/05/2026, 10:22:38 pm [31m  ERROR[39m [38;5;3m[ExceptionHandler] [39mError: connect ECONNREFUSED 127.0.0.1:3306
+[90m    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)[39m {
+  errno: [33m-4078[39m,
+  code: [32m'ECONNREFUSED'[39m,
+  syscall: [32m'connect'[39m,
+  address: [32m'127.0.0.1'[39m,
+  port: [33m3306[39m,
+  fatal: [33mtrue[39m
+}

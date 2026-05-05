@@ -1,0 +1,22 @@
+<h2>Application Received: {{serviceName}}</h2>
+<p>Hello <strong>{{userName}}</strong>,</p>
+<p>Thank you for applying for <strong>{{serviceName}}</strong>. We have received your application and it is now being processed.</p>
+
+<div class="details-box">
+  <div class="details-row">
+    <span class="label">Reference ID</span>
+    <span class="value">{{referenceId}}</span>
+  </div>
+  <div class="details-row">
+    <span class="label">Service</span>
+    <span class="value">{{serviceName}}</span>
+  </div>
+  <div class="details-row">
+    <span class="label">Status</span>
+    <span class="value">Applied / Pending Review</span>
+  </div>
+</div>
+
+<p>Our team will review your submission. You will receive a notification once it is processed.</p>
+<a href="{{dashboardUrl}}" class="btn">Track Application</a>
+<p>If you have any questions, please reach out to our support team.</p>

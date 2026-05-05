@@ -1,0 +1,31 @@
+import { ServiceEntity } from '../../../catalog/infrastructure/persistence/service.entity';
+import { UserEntity } from '../../../identity/infrastructure/persistence/user.entity';
+import { ServiceRequestDocumentEntity } from './service-request-document.entity';
+import { PaymentEntity } from './payment.entity';
+export declare class UserServiceEntity {
+    id: number;
+    userId: number;
+    serviceId: number;
+    accountantId: number | null;
+    applicationUniqueId: string | null;
+    status: string;
+    paymentStatus: string;
+    formData: Record<string, unknown> | null;
+    documents: Record<string, unknown> | null;
+    amount: string | null;
+    notes: string | null;
+    revisionNotes: string | null;
+    caNotes: string | null;
+    updateNote: string | null;
+    rejectionReason: string | null;
+    verified: boolean;
+    certificateUrl: string | null;
+    submittedToCaAt: Date | null;
+    user: UserEntity;
+    accountant: UserEntity | null;
+    service: ServiceEntity;
+    requestDocuments: ServiceRequestDocumentEntity[];
+    payments: PaymentEntity[];
+    createdAt: Date;
+    updatedAt: Date;
+}

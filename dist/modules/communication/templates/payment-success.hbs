@@ -1,0 +1,36 @@
+<h2>Payment Confirmed!</h2>
+<p>Hello {{userName}},</p>
+<p>We are pleased to inform you that your payment for <strong>{{serviceName}}</strong> has been successfully processed.</p>
+
+<div class="details-box">
+  <div class="details-row">
+    <span class="label">Order ID</span>
+    <span class="value">{{orderUniqueId}}</span>
+  </div>
+  <div class="details-row">
+    <span class="label">Service</span>
+    <span class="value">{{serviceName}}</span>
+  </div>
+  <div class="details-row">
+    <span class="label">Amount Paid</span>
+    <span class="value">₹{{amount}}</span>
+  </div>
+  <div class="details-row">
+    <span class="label">Status</span>
+    <span class="value" style="color: #22c55e; font-weight: 700;">PAID ✓</span>
+  </div>
+</div>
+
+<p>You can now proceed with further steps of your service application in your dashboard.</p>
+
+<div class="btn">
+  <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+    <tbody>
+      <tr>
+        <td> <a href="{{dashboardUrl}}/services" target="_blank">View My Services</a> </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<p>Thank you for choosing Doorstep Filings.</p>
