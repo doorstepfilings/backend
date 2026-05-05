@@ -45,11 +45,11 @@ class EnvironmentVariables {
 
     @IsString()
     @IsNotEmpty()
-    DB_NAME!: string;
+    DB_DATABASE!: string;
 
     @IsString()
     @IsNotEmpty()
-    DB_USER!: string;
+    DB_USERNAME!: string;
 
     @IsString()
     @IsOptional()
@@ -101,8 +101,8 @@ export function validateEnvironment(config: Record<string, unknown>) {
         PORT: 4000,
         DB_HOST: '127.0.0.1',
         DB_PORT: 3306,
-        DB_NAME: 'Accounting',
-        DB_USER: 'root',
+        DB_DATABASE: 'Accounting',
+        DB_USERNAME: 'root',
         DB_PASSWORD: '',
         JWT_SECRET: 'change-me-before-production',
         JWT_EXPIRES_IN: '30d',
