@@ -8,7 +8,7 @@ export type AuthConfig = {
 export const authConfig = registerAs(
     'auth',
     (): AuthConfig => ({
-        jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '30d',
-        jwtSecret: process.env.JWT_SECRET ?? 'change-me-before-production',
+        jwtExpiresIn: process.env.JWT_EXPIRES_IN as string,
+        jwtSecret: process.env.JWT_SECRET as string,
     }),
 );

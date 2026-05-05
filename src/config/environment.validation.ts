@@ -94,25 +94,7 @@ class EnvironmentVariables {
 
 export function validateEnvironment(config: Record<string, unknown>) {
     const mergedConfig = {
-        API_PREFIX: 'api',
-        APP_NAME: 'doorstep-backend',
-        FRONTEND_URL: 'http://127.0.0.1:3000',
         NODE_ENV: 'development',
-        PORT: 4000,
-        DB_HOST: '127.0.0.1',
-        DB_PORT: 3306,
-        DB_DATABASE: 'Accounting',
-        DB_USERNAME: 'root',
-        DB_PASSWORD: '',
-        JWT_SECRET: 'change-me-before-production',
-        JWT_EXPIRES_IN: '30d',
-        MAIL_HOST: 'smtp.gmail.com',
-        MAIL_PORT: 587,
-        MAIL_USER: '',
-        MAIL_PASS: '',
-        MAIL_FROM: '',
-        RAZORPAY_KEY_ID: '',
-        RAZORPAY_KEY_SECRET: '',
         ...config,
     };
 

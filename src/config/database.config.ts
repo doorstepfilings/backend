@@ -11,10 +11,10 @@ export type DatabaseConfig = {
 export const databaseConfig = registerAs(
     'database',
     (): DatabaseConfig => ({
-        database: process.env.DB_DATABASE!,
-        host: process.env.DB_HOST!,
-        password: process.env.DB_PASSWORD!,
-        port: Number(process.env.DB_PORT!),
-        username: process.env.DB_USERNAME!,
+        host: process.env.DB_HOST as string,
+        port: parseInt(process.env.DB_PORT || '3306', 10),
+        username: process.env.DB_USERNAME as string,
+        password: process.env.DB_PASSWORD as string,
+        database: process.env.DB_DATABASE as string,
     }),
 );

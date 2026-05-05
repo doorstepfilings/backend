@@ -16,15 +16,15 @@ export type AppEnvironment = {
 export const appEnvironment = registerAs(
     'app',
     (): AppEnvironment => ({
-        apiPrefix: process.env.API_PREFIX ?? 'api',
-        appName: process.env.APP_NAME ?? 'doorstep-backend',
-        frontendUrl: process.env.FRONTEND_URL ?? 'http://127.0.0.1:3000',
-        nodeEnv: process.env.NODE_ENV ?? 'development',
-        port: Number(process.env.PORT ?? 4000),
+        apiPrefix: process.env.API_PREFIX as string,
+        appName: process.env.APP_NAME as string,
+        frontendUrl: process.env.FRONTEND_URL as string,
+        nodeEnv: process.env.NODE_ENV as string,
+        port: Number(process.env.PORT || 4000),
         twilio: {
-            sid: process.env.TWILIO_SID ?? '',
-            token: process.env.TWILIO_AUTH_TOKEN ?? '',
-            number: process.env.TWILIO_NUMBER ?? '',
+            sid: process.env.TWILIO_SID as string,
+            token: process.env.TWILIO_AUTH_TOKEN as string,
+            number: process.env.TWILIO_NUMBER as string,
         },
     }),
 );
