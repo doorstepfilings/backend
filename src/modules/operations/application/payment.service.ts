@@ -236,20 +236,20 @@ export class PaymentService {
             }
 
             // Notify user about successful payment
-            const userService = payment.userServiceId
-                ? await this.userServicesRepository.findOne({
-                      where: { id: payment.userServiceId },
-                      relations: { user: true, service: true },
-                  })
-                : null;
+            const paymentWithUser = await this.paymentsRepository.findOne({
+                where: { id: payment.id },
+                relations: { user: true, userService: { service: true } },
+            });
+            const user = paymentWithUser?.user;
 
-            if (userService?.user) {
-                this.notificationService.sendPaymentSuccessNotification(
-                    userService.user,
+            if (user) {
+                await this.notificationService.sendPaymentSuccessNotification(
+                    user,
                     payment,
-                    userService.service?.name ?? 'Service Purchase',
+                    paymentWithUser?.userService?.service?.name ?? 'Service Purchase',
                 );
             }
+
 
             return {
                 invoice_unique_id: payment.invoiceUniqueId,
@@ -306,11 +306,12 @@ export class PaymentService {
             : null;
 
         if (userService?.user) {
-            this.notificationService.sendRefundNotification(
+            await this.notificationService.sendRefundNotification(
                 userService.user,
                 payment,
             );
         }
+
 
         return payment;
     }

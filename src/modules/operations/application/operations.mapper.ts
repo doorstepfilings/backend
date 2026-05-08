@@ -32,26 +32,33 @@ function isClientVisibleDocument(
     document: ServiceRequestDocumentEntity,
     ownerUserId?: number | null,
 ) {
-    if (document.documentType === 'client') {
+    const type = String(document.documentType || '').toLowerCase();
+    const category = String(document.documentCategory || '').toLowerCase();
+    const role = String(document.uploadedBy?.role || '').toLowerCase();
+
+    const isStaffRole = [
+        'accountant',
+        'admin',
+        'super_admin',
+        'regional_manager',
+        'rm',
+        'employee',
+    ].includes(role);
+
+    // 1. Explicit Internal markers (Sole Source of Truth - hide always)
+    if (['internal', 'internal_only', 'internal_document'].includes(type)) {
+        return false;
+    }
+    if (['internal', 'internal_document'].includes(category)) {
+        return false;
+    }
+
+    // 2. User/Customer Role (Clients always see their own uploads)
+    if (role === 'user' || role === 'customer') {
         return true;
     }
 
-    if (document.documentCategory === 'client_document') {
-        return true;
-    }
-
-    if (
-        ['certificate', 'report', 'other'].includes(
-            String(document.documentCategory || '').toLowerCase(),
-        )
-    ) {
-        return true;
-    }
-
-    if (looksLikeCertificate(document) || looksLikeReport(document)) {
-        return true;
-    }
-
+    // Also check by ID if role is missing or ambiguous
     if (
         ownerUserId !== null &&
         ownerUserId !== undefined &&
@@ -60,8 +67,37 @@ function isClientVisibleDocument(
         return true;
     }
 
-    return document.uploadedBy?.role === 'user';
+    // 3. Staff Uploads (Accountant/Admin/RM)
+    if (isStaffRole) {
+        // Only show if explicitly marked as client visible
+        if (type === 'client' || type === 'client_document') return true;
+        if (category === 'client_document' || category === 'client_visible')
+            return true;
+
+        // Certificates and Reports are usually deliverables
+        if (['certificate', 'report'].includes(category)) return true;
+
+        // Explicit final deliveries
+        if (document.isFinal) return true;
+
+        // Heuristics (ONLY if no explicit type is set)
+        if (!type || type === 'null' || type === 'undefined') {
+            if (looksLikeCertificate(document) || looksLikeReport(document)) {
+                return true;
+            }
+        }
+
+        // Default for staff: Internal (Hidden from client)
+        return false;
+    }
+
+    // 4. Fallback for legacy or unknown roles
+    if (type === 'client' || type === 'client_document') return true;
+    if (['certificate', 'report', 'other'].includes(category)) return true;
+
+    return false;
 }
+
 
 function toServiceRequestDocumentResource(
     document: ServiceRequestDocumentEntity,
@@ -85,6 +121,7 @@ function toServiceRequestDocumentResource(
             ? {
                   id: document.uploadedBy.id,
                   name: document.uploadedBy.name,
+                  role: document.uploadedBy.role,
               }
             : null,
         created_at: document.createdAt,

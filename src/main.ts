@@ -1,7 +1,9 @@
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import compression from 'compression';
 import type { NextFunction, Request, Response } from 'express';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import type { AppEnvironment } from './config/environment';
 import { ApiExceptionFilter } from './shared/http/api-exception.filter';
@@ -17,6 +19,11 @@ async function bootstrap() {
     const storageRoots = buildStorageRoots(
         configService.get<string>('LEGACY_STORAGE_ROOTS'),
     );
+
+    // Security & Performance Middleware
+    app.use(helmet());
+    app.use(compression());
+
     const httpAdapter = app.getHttpAdapter().getInstance();
 
     // Preserve access to documents that still live in the old Laravel storage.
@@ -61,7 +68,7 @@ async function bootstrap() {
             },
         }),
     );
-    app.useGlobalFilters(new ApiExceptionFilter());
+    app.useGlobalFilters(new ApiExceptionFilter(configService));
 
     await app.listen(appEnvironment.port);
 }

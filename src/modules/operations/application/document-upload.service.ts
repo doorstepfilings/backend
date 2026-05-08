@@ -11,6 +11,7 @@ export type UploadedDocumentFile = {
     documentCategory?: string;
     documentType?: string;
     isFinal?: boolean;
+    fieldname?: string;
     mimetype: string;
     notes?: string;
     originalname: string;
@@ -140,10 +141,21 @@ export class DocumentUploadService {
     }
 
     private resolveDocumentType(documentType?: string | null) {
-        return documentType === 'internal' ||
-            documentType === 'internal_document'
-            ? 'internal'
-            : 'client';
+        if (!documentType) {
+            return 'client';
+        }
+
+        const normalized = documentType.trim().toLowerCase();
+
+        if (
+            normalized === 'internal' ||
+            normalized === 'internal_only' ||
+            normalized === 'internal_document'
+        ) {
+            return 'internal';
+        }
+
+        return 'client';
     }
 
     private async resolveNextVersion(

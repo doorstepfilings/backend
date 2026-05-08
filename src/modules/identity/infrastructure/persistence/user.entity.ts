@@ -97,6 +97,9 @@ export class UserEntity {
     @OneToMany(() => UserEntity, (user) => user.accountant)
     assignedAccountantUsers!: UserEntity[];
 
+    @OneToMany('UserServiceEntity', 'user')
+    services!: any[];
+
     @CreateDateColumn({ name: 'created_at' })
     createdAt!: Date;
 

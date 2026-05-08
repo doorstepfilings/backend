@@ -149,7 +149,8 @@ export class AdminService {
         const saved = await this.usersRepository.save(user);
 
         // Send welcome email
-        this.notificationService.sendWelcomeNotification(saved);
+        await this.notificationService.sendWelcomeNotification(saved);
+
 
         return saved;
     }
@@ -236,10 +237,11 @@ export class AdminService {
             );
 
             // Notify the accountant
-            this.notificationService.sendAccountantAssignmentNotification(
+            await this.notificationService.sendAccountantAssignmentNotification(
                 accountant,
                 user,
             );
+
         } else {
             user.accountantId = null;
             await this.userServicesRepository.update(
@@ -407,11 +409,12 @@ export class AdminService {
                 relations: { user: true, service: true },
             });
             if (userService?.user) {
-                this.notificationService.sendServiceFinalizedNotification(
+                await this.notificationService.sendServiceFinalizedNotification(
                     userService.user,
                     userService,
                 );
             }
+
         }
 
         return result;
@@ -431,8 +434,9 @@ export class AdminService {
             relations: { user: true, service: true },
         });
         if (userService) {
-            this.notificationService.sendServiceAssignmentNotification(accountant, userService);
+            await this.notificationService.sendServiceAssignmentNotification(accountant, userService);
         }
+
 
         return result;
     }

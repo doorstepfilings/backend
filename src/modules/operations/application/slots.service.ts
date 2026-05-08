@@ -20,7 +20,7 @@ export class SlotsService {
         }
         timeSlots.push('19:00');
 
-        const inactiveStatuses = ['in_cart', 'cancelled', 'rejected'];
+        const inactiveStatuses = ['in_cart', 'cancelled', 'rejected', 'approved', 'completed'];
 
         const query = this.userServicesRepository
             .createQueryBuilder('us')

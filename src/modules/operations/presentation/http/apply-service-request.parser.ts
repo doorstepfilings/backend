@@ -72,32 +72,41 @@ function normalizeDocumentMetadataRecord(
     record: Record<string, unknown>,
     index: number,
 ): ApplyServiceDocumentMetadata {
+    const isFinalRaw = record['is_final'] ?? record['isFinal'];
+
     return {
-        document_category: normalizeString(record['document_category']) ?? null,
-        document_type: normalizeString(record['document_type']) ?? null,
+        document_category:
+            normalizeString(
+                record['document_category'] ?? record['documentCategory'],
+            ) ?? null,
+        document_type:
+            normalizeString(
+                record['document_type'] ?? record['documentType'],
+            ) ?? null,
         existing_document_id:
             normalizePositiveNumber(
-                record['existing_document_id'],
+                record['existing_document_id'] ?? record['existingDocumentId'],
                 `documents[${index}][existing_document_id]`,
             ) ?? null,
         is_final:
-            typeof record['is_final'] === 'boolean'
-                ? record['is_final']
-                : String(record['is_final']).toLowerCase() === 'true',
+            typeof isFinalRaw === 'boolean'
+                ? isFinalRaw
+                : String(isFinalRaw).toLowerCase() === 'true',
         notes: normalizeString(record['notes']) ?? null,
         service_document_id:
             normalizePositiveNumber(
-                record['service_document_id'],
+                record['service_document_id'] ?? record['serviceDocumentId'],
                 `documents[${index}][service_document_id]`,
             ) ?? null,
         source_document_id:
             normalizePositiveNumber(
-                record['source_document_id'],
+                record['source_document_id'] ?? record['sourceDocumentId'],
                 `documents[${index}][source_document_id]`,
             ) ?? null,
         type: normalizeString(record['type']) ?? null,
     };
 }
+
 
 export function parseApplyServiceDto(body: ApplyServiceBody): ApplyServiceDto {
     const serviceId = normalizePositiveNumber(
@@ -132,8 +141,21 @@ export function parseApplyServiceDocumentMetadata(
         rawMetadata === undefined ||
         rawMetadata === ''
     ) {
+        // Check if documents are already nested (e.g. by some middleware)
+        const nestedDocuments = body['documents'];
+        if (Array.isArray(nestedDocuments)) {
+            console.log('[Parser] Found nested documents array:', nestedDocuments.length);
+            return nestedDocuments.map((item, index) => {
+                return normalizeDocumentMetadataRecord(
+                    item as Record<string, unknown>,
+                    index,
+                );
+            });
+        }
+
         const indexedRecords = new Map<number, Record<string, unknown>>();
 
+        console.log('[Parser] Body keys:', Object.keys(body));
         Object.entries(body).forEach(([key, value]) => {
             const match = key.match(BRACKET_DOCUMENT_FIELD_PATTERN);
             if (!match) {
@@ -142,6 +164,8 @@ export function parseApplyServiceDocumentMetadata(
 
             const index = Number(match[1]);
             const field = match[2];
+
+            console.log('[Parser] Match found:', { key, index, field });
 
             if (!Number.isInteger(index) || field === 'file') {
                 return;
@@ -152,12 +176,15 @@ export function parseApplyServiceDocumentMetadata(
             indexedRecords.set(index, record);
         });
 
-        return [...indexedRecords.entries()]
-            .sort(([left], [right]) => left - right)
-            .map(([index, record]) =>
-                normalizeDocumentMetadataRecord(record, index),
-            );
+        const result: ApplyServiceDocumentMetadata[] = [];
+        indexedRecords.forEach((record, index) => {
+            result[index] = normalizeDocumentMetadataRecord(record, index);
+        });
+        
+        console.log('[Parser] Parsed bracket metadata:', result.length);
+        return result;
     }
+
 
     const metadata =
         typeof rawMetadata === 'string'
@@ -228,7 +255,10 @@ export function mergeUploadedFilesWithMetadata(
     files: UploadedDocumentFile[] = [],
     metadata: ApplyServiceDocumentMetadata[] = [],
 ): UploadedDocumentFile[] {
-    return files.map((file, index) => {
+    return files.map((file, i) => {
+        const fieldname = file.fieldname ?? '';
+        const match = fieldname.match(BRACKET_DOCUMENT_FILE_PATTERN);
+        const index = match ? Number(match[1]) : i;
         const item = metadata[index] ?? {};
 
         return {

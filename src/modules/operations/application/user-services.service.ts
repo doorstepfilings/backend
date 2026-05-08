@@ -123,7 +123,7 @@ export class UserServicesService {
 
             if (!slot || slot.is_full || slot.is_past) {
                 throw new BadRequestException(
-                    'Selected slot is full or unavailable',
+                    'Selected slot is full or unavailable. Please choose the next available slot or move to the next day.',
                 );
             }
         }
@@ -399,6 +399,7 @@ export class UserServicesService {
     private static readonly STATUS_FLOW: Record<string, string[]> = {
         in_cart: ['applied'],
         applied: ['under_review', 'cancelled'],
+        paid: ['under_review', 'cancelled'],
         under_review: ['applied', 'update_required', 'in_progress', 'cancelled'],
         update_required: ['under_review', 'cancelled'],
         in_progress: ['under_review', 'submitted_to_ca', 'update_required', 'cancelled'],
@@ -445,7 +446,18 @@ export class UserServicesService {
         }
 
         await this.userServicesRepository.save(userService);
-        return toUserServiceResource(userService);
+        
+        const hydrated = await this.userServicesRepository.findOneOrFail({
+            where: { id },
+            relations: {
+                requestDocuments: { uploadedBy: true },
+                service: { category: true, documents: true },
+                user: true,
+                accountant: true,
+            },
+        });
+
+        return toUserServiceResource(hydrated);
     }
 
     // Document Verification
@@ -457,7 +469,12 @@ export class UserServicesService {
     ) {
         const userService = await this.userServicesRepository.findOneOrFail({
             where: { id: userServiceId },
-            relations: { requestDocuments: true },
+            relations: {
+                requestDocuments: { uploadedBy: true },
+                service: { category: true },
+                user: true,
+                accountant: true,
+            },
         });
 
         const document = userService.requestDocuments.find((d) => d.id == docId);
@@ -484,9 +501,19 @@ export class UserServicesService {
         const userService = await this.userServicesRepository.findOneOrFail({
             where: { id },
         });
-        userService.verified = verified;
         await this.userServicesRepository.save(userService);
-        return toUserServiceResource(userService);
+
+        const hydrated = await this.userServicesRepository.findOneOrFail({
+            where: { id },
+            relations: {
+                requestDocuments: { uploadedBy: true },
+                service: { category: true },
+                user: true,
+                accountant: true,
+            },
+        });
+
+        return toUserServiceResource(hydrated);
     }
 
     async getAccountantServices(accountantId: number) {
@@ -525,6 +552,17 @@ export class UserServicesService {
         });
         userService.accountantId = accountantId;
         await this.userServicesRepository.save(userService);
-        return toUserServiceResource(userService);
+
+        const hydrated = await this.userServicesRepository.findOneOrFail({
+            where: { id: userServiceId },
+            relations: {
+                requestDocuments: { uploadedBy: true },
+                service: { category: true },
+                user: true,
+                accountant: true,
+            },
+        });
+
+        return toUserServiceResource(hydrated);
     }
 }

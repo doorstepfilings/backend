@@ -72,15 +72,24 @@ class EnvironmentVariables {
 
     @IsString()
     @IsNotEmpty()
-    MAIL_USER!: string;
+    MAIL_USERNAME!: string;
 
     @IsString()
     @IsNotEmpty()
-    MAIL_PASS!: string;
+    MAIL_PASSWORD!: string;
 
     @IsString()
     @IsNotEmpty()
-    MAIL_FROM!: string;
+    MAIL_ENCRYPTION!: string;
+
+    @IsString()
+    @IsNotEmpty()
+    MAIL_FROM_ADDRESS!: string;
+
+    @IsString()
+    @IsNotEmpty()
+    MAIL_FROM_NAME!: string;
+
 
     @IsString()
     @IsNotEmpty()

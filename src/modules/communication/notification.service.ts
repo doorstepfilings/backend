@@ -38,13 +38,16 @@ export class NotificationService {
             await this.mailerService.sendMail({
                 to,
                 subject,
-                template: `./${template}`,
+                template: template,
                 context: { ...context, year: this.year, dashboardUrl: this.dashboardUrl },
             });
+
             this.logger.log(`Email sent to ${to} [${template}]`);
         } catch (error) {
             this.logger.error(`Failed to send email to ${to}: ${error.message}`);
+            throw error;
         }
+
     }
 
     async sendSms(to: string, body: string) {
@@ -65,7 +68,9 @@ export class NotificationService {
             this.logger.log(`SMS sent to ${formattedTo}`);
         } catch (error) {
             this.logger.error(`Failed to send SMS to ${to}: ${error.message}`);
+            throw error;
         }
+
     }
 
     // ─── Service Lifecycle ─────────────────────────────────────────────────────
@@ -74,8 +79,8 @@ export class NotificationService {
         user: { email?: string | null; name?: string | null; id?: number },
         service: { name?: string | null },
     ) {
-        if (!user.email) return;
-        this.sendEmail(user.email, 'Service Application Received', 'service-applied', {
+        if (!user.email) return Promise.resolve();
+        return this.sendEmail(user.email, 'Service Application Received', 'service-applied', {
             userName: user.name ?? 'User',
             serviceName: service.name ?? 'Service',
             referenceId: `#${String(user.id ?? 0).padStart(6, '0')}`,
@@ -86,14 +91,15 @@ export class NotificationService {
         user: { email?: string | null; name?: string | null },
         userService: { id: number; service?: { name?: string | null } | null; certificateUrl?: string | null },
     ) {
-        if (!user.email) return;
-        this.sendEmail(user.email, 'Your Service Has Been Completed', 'service-finalized', {
+        if (!user.email) return Promise.resolve();
+        return this.sendEmail(user.email, 'Your Service Has Been Completed', 'service-finalized', {
             userName: user.name ?? 'User',
             serviceName: userService.service?.name ?? 'Service',
             referenceId: `#${String(userService.id).padStart(6, '0')}`,
             certificateUrl: userService.certificateUrl ?? null,
         });
     }
+
 
     // ─── Payments ──────────────────────────────────────────────────────────────
 
@@ -102,41 +108,46 @@ export class NotificationService {
         payment: { amount: number; orderUniqueId?: string | null; invoiceUniqueId?: string | null },
         serviceName: string = 'Service Purchase',
     ) {
-        if (!user.email) return;
-        this.sendEmail(user.email, 'Payment Successful - DoorstepFilings', 'payment-success', {
+        if (!user.email) return Promise.resolve();
+        return this.sendEmail(user.email, 'Payment Successful - DoorstepFilings', 'payment-success', {
             userName: user.name ?? 'User',
-            amount: payment.amount.toFixed(2),
+            amount: Number(payment.amount).toFixed(2),
+
             orderUniqueId: payment.orderUniqueId ?? 'N/A',
             serviceName,
         });
     }
 
+
     sendRefundNotification(
         user: { email?: string | null; name?: string | null },
         payment: { refundAmount?: number | null; orderUniqueId?: string | null; refundReason?: string | null },
     ) {
-        if (!user.email) return;
-        this.sendEmail(user.email, 'Refund Initiated - DoorstepFilings', 'refund', {
+        if (!user.email) return Promise.resolve();
+        return this.sendEmail(user.email, 'Refund Initiated - DoorstepFilings', 'refund', {
             userName: user.name ?? 'User',
-            refundAmount: (payment.refundAmount ?? 0).toFixed(2),
+            refundAmount: Number(payment.refundAmount ?? 0).toFixed(2),
+
             orderUniqueId: payment.orderUniqueId ?? 'N/A',
             refundReason: payment.refundReason ?? 'Customer request',
         });
     }
 
+
     // ─── Auth / OTP ────────────────────────────────────────────────────────────
 
     sendRegisterOtpNotification(to: string, otp: string) {
-        this.sendEmail(to, 'Your DoorstepFilings OTP', 'register-otp', { otp });
+        return this.sendEmail(to, 'Your DoorstepFilings OTP', 'register-otp', { otp });
     }
 
     sendWelcomeNotification(user: { email?: string | null; name?: string | null }) {
-        if (!user.email) return;
-        this.sendEmail(user.email, 'Welcome to DoorstepFilings!', 'welcome', {
+        if (!user.email) return Promise.resolve();
+        return this.sendEmail(user.email, 'Welcome to DoorstepFilings!', 'welcome', {
             name: user.name ?? 'User',
             email: user.email,
         });
     }
+
 
     // ─── Staff Assignment ──────────────────────────────────────────────────────
 
@@ -144,8 +155,8 @@ export class NotificationService {
         accountant: { email?: string | null; name?: string | null },
         client: { name?: string | null },
     ) {
-        if (!accountant.email) return;
-        this.sendEmail(accountant.email, 'New Client Assigned to You', 'accountant-assigned', {
+        if (!accountant.email) return Promise.resolve();
+        return this.sendEmail(accountant.email, 'New Client Assigned to You', 'accountant-assigned', {
             accountantName: accountant.name ?? 'Accountant',
             clientName: client.name ?? 'Client',
             serviceName: 'Multiple Services',
@@ -153,16 +164,18 @@ export class NotificationService {
         });
     }
 
+
     sendServiceAssignmentNotification(
         accountant: { email?: string | null; name?: string | null },
         userService: { id: number; user?: { name?: string | null } | null; service?: { name?: string | null } | null },
     ) {
-        if (!accountant.email) return;
-        this.sendEmail(accountant.email, 'New Service Request Assigned', 'accountant-assigned', {
+        if (!accountant.email) return Promise.resolve();
+        return this.sendEmail(accountant.email, 'New Service Request Assigned', 'accountant-assigned', {
             accountantName: accountant.name ?? 'Accountant',
             clientName: userService.user?.name ?? 'Client',
             serviceName: userService.service?.name ?? 'Service',
             referenceId: `#${String(userService.id).padStart(6, '0')}`,
         });
     }
+
 }

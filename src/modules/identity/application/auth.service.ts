@@ -180,7 +180,8 @@ export class AuthService {
         const token = await this.issueJwtForUser(user);
 
         // Send welcome email
-        this.notificationService.sendWelcomeNotification(user);
+        await this.notificationService.sendWelcomeNotification(user);
+
 
         return {
             token,
@@ -202,17 +203,18 @@ export class AuthService {
         );
 
         if (normalizedIdentifier.includes('@')) {
-            this.notificationService.sendRegisterOtpNotification(
+            await this.notificationService.sendRegisterOtpNotification(
                 normalizedIdentifier,
                 otp,
             );
         } else {
             const formattedPhone = formatPhoneNumber(normalizedIdentifier);
-            this.notificationService.sendSms(
+            await this.notificationService.sendSms(
                 formattedPhone,
                 `Your K P Chaudhary & Co. verification code is: ${otp}. This code expires in 10 minutes.`,
             );
         }
+
 
         return this.devOnlyPayload({
             message: 'OTP sent successfully',
@@ -261,7 +263,7 @@ export class AuthService {
             }),
         );
 
-        this.notificationService.sendEmail(
+        await this.notificationService.sendEmail(
             normalizedEmail,
             'Reset your Doorstep password',
             'password-reset',
@@ -270,6 +272,7 @@ export class AuthService {
                 token: resetToken,
             },
         );
+
 
         return this.devOnlyPayload({
             reset_token: resetToken,

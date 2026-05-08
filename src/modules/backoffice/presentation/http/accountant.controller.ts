@@ -39,6 +39,12 @@ export class AccountantController {
         return successResponse(result);
     }
 
+    @Get('users/:id')
+    async getUserDetail(@Req() req: any, @Param('id', ParseIntPipe) id: number) {
+        const result = await this.accountantService.getUserById(req.user.id, id);
+        return successResponse(result);
+    }
+
     @Get('service-requests')
     async listRequests(@Req() req: any, @Query('status') status?: string) {
         const result = await this.accountantService.listRequests(req.user.id, status);
@@ -72,18 +78,42 @@ export class AccountantController {
         @Body() body: Record<string, unknown>,
         @UploadedFiles() files: UploadedDocumentFile[] = [],
     ) {
+        const isFinalGlobal =
+            body['is_final'] === '1' ||
+            body['is_final'] === 'true' ||
+            body['is_final'] === true;
+        const metadata = parseApplyServiceDocumentMetadata(body);
         const normalizedFiles = normalizeUploadedDocumentFiles(files);
+
+        console.log('[AccountantController] Upload started', {
+            requestId: id,
+            isFinalGlobal,
+            filesCount: files.length,
+            metadata: JSON.stringify(metadata)
+        });
+
         const uploadedFiles = mergeUploadedFilesWithMetadata(
             normalizedFiles,
-            parseApplyServiceDocumentMetadata(body),
-        );
+            metadata,
+        ).map(file => ({
+            ...file,
+            isFinal: file.isFinal ?? isFinalGlobal,
+        }));
+
+        console.log('[AccountantController] Merged files', {
+            mergedCount: uploadedFiles.length,
+            types: uploadedFiles.map(f => f.documentType),
+            finals: uploadedFiles.map(f => f.isFinal)
+        });
+
         const result = await this.accountantService.uploadDocuments(
             req.user.id,
             id,
             uploadedFiles,
         );
-        return successResponse(result, 'Documents uploaded successfully');
+        return successResponse(result, 'Artifacts successfully archived');
     }
+
 
     @Delete('documents/:docId')
     async deleteDocument(@Req() req: any, @Param('docId') docId: number) {

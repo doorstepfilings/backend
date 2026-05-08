@@ -37,5 +37,15 @@ export function toUserResource(user: UserEntity) {
                   accountant_unique_id: user.accountant.accountantUniqueId,
               }
             : null,
+        services: (user as any).services?.map((s: any) => ({
+            id: s.id,
+            status: s.status,
+            application_unique_id: s.applicationUniqueId,
+            updated_at: s.updatedAt,
+            service: s.service ? {
+                id: s.service.id,
+                name: s.service.name
+            } : null
+        })) || []
     };
 }

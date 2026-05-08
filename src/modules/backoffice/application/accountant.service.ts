@@ -5,7 +5,7 @@ import {
     UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not } from 'typeorm';
+import { Repository, Not, In } from 'typeorm';
 import { UserEntity } from '../../identity/infrastructure/persistence/user.entity';
 import { UserServiceEntity } from '../../operations/infrastructure/persistence/user-service.entity';
 import { toUserResource } from '../../identity/application/identity.mapper';
@@ -33,10 +33,57 @@ export class AccountantService {
     async getAssignedUsers(accountantId: number) {
         const users = await this.usersRepository.find({
             where: { accountantId, role: 'user' },
-            relations: { regionalManager: true },
+            relations: { 
+                regionalManager: true,
+                accountant: true
+            },
             order: { name: 'ASC' },
         });
-        return users.map(toUserResource);
+
+        if (users.length === 0) return [];
+
+        // Fetch services for all these users in one query
+        const userIds = users.map(u => u.id);
+        const allServices = await this.userServicesRepository.find({
+            where: { userId: In(userIds) as any },
+            relations: { service: true }
+        });
+
+        // Group services by userId
+        const servicesMap = new Map<number, any[]>();
+        allServices.forEach(s => {
+            if (!servicesMap.has(Number(s.userId))) {
+                servicesMap.set(Number(s.userId), []);
+            }
+            servicesMap.get(Number(s.userId))?.push(s);
+        });
+
+        return users.map(user => {
+            (user as any).services = servicesMap.get(user.id) || [];
+            return toUserResource(user);
+        });
+    }
+
+    async getUserById(accountantId: number, id: number) {
+        const user = await this.usersRepository.findOne({
+            where: { id, accountantId, role: 'user' },
+            relations: { 
+                regionalManager: true,
+                accountant: true,
+            },
+        });
+        
+        if (!user) throw new NotFoundException('Client not found');
+
+        // Fetch all services for this user
+        const services = await this.userServicesRepository.find({
+            where: { userId: id },
+            relations: { service: true },
+            order: { updatedAt: 'DESC' }
+        });
+
+        (user as any).services = services;
+        return toUserResource(user);
     }
 
     async listRequests(accountantId: number, status?: string) {
@@ -139,10 +186,15 @@ export class AccountantService {
             );
         }
 
+        const processedFiles = files.map((file) => ({
+            ...file,
+            documentType: file.documentType || 'internal',
+        }));
+
         await this.documentUploadService.uploadDocuments(
             requestId,
             accountantId,
-            files,
+            processedFiles,
         );
 
         return this.showRequest(accountantId, requestId);

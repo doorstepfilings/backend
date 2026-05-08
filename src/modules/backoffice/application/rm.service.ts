@@ -67,10 +67,11 @@ export class RMService {
                 },
                 { accountantId },
             );
-            this.notificationService.sendAccountantAssignmentNotification(
+            await this.notificationService.sendAccountantAssignmentNotification(
                 accountant,
                 user,
             );
+
         } else {
             user.accountantId = null;
             await this.userServicesRepository.update(

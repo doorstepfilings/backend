@@ -6,13 +6,17 @@ import {
     HttpException,
     HttpStatus,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 
 @Catch()
 export class ApiExceptionFilter implements ExceptionFilter {
+    constructor(private readonly configService: ConfigService) {}
+
     catch(exception: unknown, host: ArgumentsHost) {
         const context = host.switchToHttp();
         const response = context.getResponse<Response>();
+        const isProduction = this.configService.get('app.nodeEnv') === 'production';
 
         const status =
             exception instanceof HttpException
@@ -56,7 +60,12 @@ export class ApiExceptionFilter implements ExceptionFilter {
                 : (payload.message ?? payload.error ?? 'Request failed');
             errors = Array.isArray(payload.message) ? payload.message : null;
         } else if (exception instanceof Error) {
-            message = exception.message;
+            // In production, we don't want to leak internal error messages for 500s.
+            if (status === HttpStatus.INTERNAL_SERVER_ERROR && isProduction) {
+                message = 'An unexpected error occurred. Please try again later.';
+            } else {
+                message = exception.message;
+            }
         }
 
         response.status(status).json({
