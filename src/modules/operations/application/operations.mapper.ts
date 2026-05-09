@@ -69,6 +69,11 @@ function isClientVisibleDocument(
 
     // 3. Staff Uploads (Accountant/Admin/RM)
     if (isStaffRole) {
+        // Only show if the document is finalized/approved/verified
+        const status = String(document.status || '').toLowerCase();
+        const isReady = ['approved', 'verified'].includes(status);
+        if (!isReady) return false;
+
         // Only show if explicitly marked as client visible
         if (type === 'client' || type === 'client_document') return true;
         if (category === 'client_document' || category === 'client_visible')
@@ -93,7 +98,11 @@ function isClientVisibleDocument(
 
     // 4. Fallback for legacy or unknown roles
     if (type === 'client' || type === 'client_document') return true;
-    if (['certificate', 'report', 'other'].includes(category)) return true;
+    if (['certificate', 'report', 'other'].includes(category)) {
+        // Certificates and Reports should generally be approved to be visible to clients
+        const status = String(document.status || '').toLowerCase();
+        return ['approved', 'verified'].includes(status);
+    }
 
     return false;
 }
@@ -134,13 +143,47 @@ export function toUserServiceResource(
     options: UserServiceResourceOptions = {},
 ) {
     const { includeInternalDocuments = true, ownerUserId = null } = options;
-    const requestDocuments = Array.isArray(userService.requestDocuments)
+    let requestDocuments = Array.isArray(userService.requestDocuments)
         ? includeInternalDocuments
             ? userService.requestDocuments
             : userService.requestDocuments.filter((document) =>
                   isClientVisibleDocument(document, ownerUserId),
               )
         : [];
+
+    // Logic: If a certificate or report is approved, hide other pending versions of it.
+    // Also, if the service itself is approved/completed, we should generally only show finalized/approved documents to the client.
+    if (!includeInternalDocuments) {
+        const approvedCategories = new Set(
+            requestDocuments
+                .filter(d => (d.status === 'approved' || d.status === 'verified'))
+                .map(d => d.documentCategory)
+                .filter(Boolean)
+        );
+
+        requestDocuments = requestDocuments.filter(doc => {
+            const status = String(doc.status || '').toLowerCase();
+            const category = String(doc.documentCategory || '').toLowerCase();
+
+            // If we have an approved version of this category (like 'report'), hide the pending ones
+            if (status === 'pending' && approvedCategories.has(doc.documentCategory)) {
+                return false;
+            }
+
+            // Hide all pending certificates and reports from clients if they aren't approved yet
+            if (status === 'pending' && (category === 'report' || category === 'certificate')) {
+                return false;
+            }
+
+            // If the whole service is approved/completed, hide remaining pending documents from the client view
+            if (['approved', 'completed'].includes(userService.status) && status === 'pending') {
+                return false;
+            }
+
+            return true;
+        });
+    }
+
     const documentMap = includeInternalDocuments
         ? userService.documents
         : Object.fromEntries(
@@ -163,6 +206,10 @@ export function toUserServiceResource(
             ? toServiceResource(userService.service)
             : null,
         application_unique_id: userService.applicationUniqueId,
+        order_unique_id: userService.latestPayment?.orderUniqueId ?? null,
+        invoice_unique_id: userService.latestPayment?.invoiceUniqueId ?? null,
+        payment_id: userService.latestPayment?.id ?? null,
+        order_created_at: userService.latestPayment?.createdAt ?? null,
         status: userService.status,
         payment_status: userService.paymentStatus,
         form_data: userService.formData,

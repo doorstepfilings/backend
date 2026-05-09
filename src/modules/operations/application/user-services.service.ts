@@ -4,8 +4,9 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, In, Not, Repository } from 'typeorm';
+import { FindOptionsWhere, In, Not, QueryFailedError, Repository } from 'typeorm';
 import { toUserServiceResource } from './operations.mapper';
+import { ServiceRequestDocumentEntity } from '../infrastructure/persistence/service-request-document.entity';
 import { UserServiceEntity } from '../infrastructure/persistence/user-service.entity';
 import { ServiceEntity } from '../../catalog/infrastructure/persistence/service.entity';
 import { UserEntity } from '../../identity/infrastructure/persistence/user.entity';
@@ -39,6 +40,8 @@ export class UserServicesService {
     constructor(
         @InjectRepository(UserServiceEntity)
         private readonly userServicesRepository: Repository<UserServiceEntity>,
+        @InjectRepository(ServiceRequestDocumentEntity)
+        private readonly requestDocumentsRepository: Repository<ServiceRequestDocumentEntity>,
         @InjectRepository(ServiceEntity)
         private readonly servicesRepository: Repository<ServiceEntity>,
         @InjectRepository(UserEntity)
@@ -58,9 +61,6 @@ export class UserServicesService {
                 userId,
             },
             relations: {
-                requestDocuments: {
-                    uploadedBy: true,
-                },
                 accountant: true,
                 service: {
                     category: true,
@@ -75,6 +75,10 @@ export class UserServicesService {
                 createdAt: 'DESC',
             },
         });
+
+        await this.populateRequestDocuments(services);
+        await this.populateLatestPayments(services);
+        this.sortByLatestOrderFirst(services);
 
         return services.map((service) =>
             toUserServiceResource(service, {
@@ -205,13 +209,13 @@ export class UserServicesService {
         const hydrated = await this.userServicesRepository.findOneOrFail({
             where: { id: userService.id },
             relations: {
-                requestDocuments: {
-                    uploadedBy: true,
-                },
                 service: { category: true, documents: true },
                 user: true,
             },
         });
+
+        await this.populateRequestDocuments(hydrated);
+        await this.populateLatestPayments(hydrated);
 
         return toUserServiceResource(hydrated, {
             includeInternalDocuments: false,
@@ -227,9 +231,6 @@ export class UserServicesService {
         const userService = await this.userServicesRepository.findOne({
             where: { id: userServiceId, userId },
             relations: {
-                requestDocuments: {
-                    uploadedBy: true,
-                },
                 service: { category: true, documents: true },
                 user: true,
             },
@@ -262,13 +263,13 @@ export class UserServicesService {
         const refreshed = await this.userServicesRepository.findOneOrFail({
             where: { id: userService.id },
             relations: {
-                requestDocuments: {
-                    uploadedBy: true,
-                },
                 service: { category: true, documents: true },
                 user: true,
             },
         });
+
+        await this.populateRequestDocuments(refreshed);
+        await this.populateLatestPayments(refreshed);
 
         return toUserServiceResource(refreshed, {
             includeInternalDocuments: false,
@@ -377,9 +378,6 @@ export class UserServicesService {
         const services = await this.userServicesRepository.find({
             where,
             relations: {
-                requestDocuments: {
-                    uploadedBy: true,
-                },
                 accountant: true,
                 service: {
                     category: true,
@@ -392,17 +390,21 @@ export class UserServicesService {
             },
         });
 
+        await this.populateRequestDocuments(services);
+        await this.populateLatestPayments(services);
+        this.sortByLatestOrderFirst(services);
+
         return services.map((service) => toUserServiceResource(service));
     }
 
     // Status State Machine
     private static readonly STATUS_FLOW: Record<string, string[]> = {
         in_cart: ['applied'],
-        applied: ['under_review', 'cancelled'],
-        paid: ['under_review', 'cancelled'],
-        under_review: ['applied', 'update_required', 'in_progress', 'cancelled'],
-        update_required: ['under_review', 'cancelled'],
-        in_progress: ['under_review', 'submitted_to_ca', 'update_required', 'cancelled'],
+        applied: ['under_review', 'approved', 'cancelled'],
+        paid: ['under_review', 'approved', 'cancelled'],
+        under_review: ['applied', 'update_required', 'in_progress', 'approved', 'cancelled'],
+        update_required: ['under_review', 'approved', 'cancelled'],
+        in_progress: ['under_review', 'submitted_to_ca', 'update_required', 'approved', 'cancelled'],
         submitted_to_ca: ['in_progress', 'approved', 'cancelled'],
         approved: ['submitted_to_ca', 'completed'],
         completed: ['approved'],
@@ -450,12 +452,14 @@ export class UserServicesService {
         const hydrated = await this.userServicesRepository.findOneOrFail({
             where: { id },
             relations: {
-                requestDocuments: { uploadedBy: true },
                 service: { category: true, documents: true },
                 user: true,
                 accountant: true,
             },
         });
+
+        await this.populateRequestDocuments(hydrated);
+        await this.populateLatestPayments(hydrated);
 
         return toUserServiceResource(hydrated);
     }
@@ -470,14 +474,16 @@ export class UserServicesService {
         const userService = await this.userServicesRepository.findOneOrFail({
             where: { id: userServiceId },
             relations: {
-                requestDocuments: { uploadedBy: true },
                 service: { category: true },
                 user: true,
                 accountant: true,
             },
         });
 
-        const document = userService.requestDocuments.find((d) => d.id == docId);
+        const document = await this.requestDocumentsRepository.findOne({
+            where: { id: docId, userServiceId },
+            relations: { uploadedBy: true },
+        });
         if (!document) {
             throw new NotFoundException('Document not found in this request');
         }
@@ -494,6 +500,10 @@ export class UserServicesService {
             await this.userServicesRepository.save(userService);
         }
 
+        userService.requestDocuments = [document];
+        await this.populateRequestDocuments(userService);
+        await this.populateLatestPayments(userService);
+
         return toUserServiceResource(userService);
     }
 
@@ -501,17 +511,20 @@ export class UserServicesService {
         const userService = await this.userServicesRepository.findOneOrFail({
             where: { id },
         });
+        userService.verified = verified;
         await this.userServicesRepository.save(userService);
 
         const hydrated = await this.userServicesRepository.findOneOrFail({
             where: { id },
             relations: {
-                requestDocuments: { uploadedBy: true },
                 service: { category: true },
                 user: true,
                 accountant: true,
             },
         });
+
+        await this.populateRequestDocuments(hydrated);
+        await this.populateLatestPayments(hydrated);
 
         return toUserServiceResource(hydrated);
     }
@@ -556,13 +569,192 @@ export class UserServicesService {
         const hydrated = await this.userServicesRepository.findOneOrFail({
             where: { id: userServiceId },
             relations: {
-                requestDocuments: { uploadedBy: true },
                 service: { category: true },
                 user: true,
                 accountant: true,
             },
         });
 
+        await this.populateRequestDocuments(hydrated);
+        await this.populateLatestPayments(hydrated);
+
         return toUserServiceResource(hydrated);
+    }
+
+    async populateLatestPayments<
+        T extends UserServiceEntity | UserServiceEntity[],
+    >(input: T): Promise<T> {
+        const services = Array.isArray(input) ? input : [input];
+
+        if (services.length === 0) {
+            return input;
+        }
+
+        const serviceIds = [
+            ...new Set(
+                services
+                    .map((service) => Number(service.id))
+                    .filter((serviceId) => Number.isFinite(serviceId)),
+            ),
+        ];
+        const userIds = [
+            ...new Set(
+                services
+                    .map((service) => Number(service.userId))
+                    .filter((userId) => Number.isFinite(userId)),
+            ),
+        ];
+
+        if (serviceIds.length === 0 || userIds.length === 0) {
+            services.forEach((service) => {
+                service.latestPayment = null;
+            });
+            return input;
+        }
+
+        const payments = await this.paymentsRepository
+            .createQueryBuilder('payment')
+            .where('payment.user_service_id IN (:...serviceIds)', { serviceIds })
+            .orWhere('payment.user_id IN (:...userIds)', { userIds })
+            .orderBy('payment.created_at', 'DESC')
+            .addOrderBy('payment.id', 'DESC')
+            .getMany();
+
+        const targetServiceIds = new Set(serviceIds);
+        const latestPaymentsByServiceId = new Map<number, PaymentEntity>();
+
+        for (const payment of payments) {
+            const linkedServiceIds = this.resolvePaymentLinkedServiceIds(payment);
+
+            for (const serviceId of linkedServiceIds) {
+                if (!targetServiceIds.has(serviceId)) {
+                    continue;
+                }
+
+                if (!latestPaymentsByServiceId.has(serviceId)) {
+                    latestPaymentsByServiceId.set(serviceId, payment);
+                }
+            }
+        }
+
+        services.forEach((service) => {
+            service.latestPayment =
+                latestPaymentsByServiceId.get(Number(service.id)) ?? null;
+        });
+
+        return input;
+    }
+
+    async populateRequestDocuments<
+        T extends UserServiceEntity | UserServiceEntity[],
+    >(input: T): Promise<T> {
+        const services = Array.isArray(input) ? input : [input];
+
+        if (services.length === 0) {
+            return input;
+        }
+
+        const serviceIds = services
+            .map((service) => Number(service.id))
+            .filter((serviceId) => Number.isFinite(serviceId));
+
+        if (serviceIds.length === 0) {
+            services.forEach((service) => {
+                service.requestDocuments = [];
+            });
+            return input;
+        }
+
+        try {
+            const documents = await this.requestDocumentsRepository.find({
+                where: { userServiceId: In(serviceIds) },
+                relations: { uploadedBy: true },
+                order: { createdAt: 'ASC' },
+            });
+
+            const documentsByServiceId = new Map<
+                number,
+                ServiceRequestDocumentEntity[]
+            >();
+
+            for (const document of documents) {
+                const key = Number(document.userServiceId);
+                const existing = documentsByServiceId.get(key);
+                if (existing) {
+                    existing.push(document);
+                    continue;
+                }
+
+                documentsByServiceId.set(key, [document]);
+            }
+
+            services.forEach((service) => {
+                service.requestDocuments =
+                    documentsByServiceId.get(Number(service.id)) ?? [];
+            });
+        } catch (error) {
+            if (!this.isRecoverableRequestDocumentsQueryError(error)) {
+                throw error;
+            }
+
+            console.warn(
+                '[UserServicesService] Request-document hydration failed; continuing with empty request_documents.',
+                error,
+            );
+
+            services.forEach((service) => {
+                service.requestDocuments = [];
+            });
+        }
+
+        return input;
+    }
+
+    private resolvePaymentLinkedServiceIds(payment: PaymentEntity) {
+        const cartItemIds = Array.isArray((payment.notes as any)?.cart_item_ids)
+            ? (payment.notes as any).cart_item_ids
+            : [];
+        const serviceIds = [...cartItemIds, payment.userServiceId].filter(
+            (value): value is number => Number.isInteger(Number(value)),
+        );
+
+        return [...new Set(serviceIds.map((value) => Number(value)))];
+    }
+
+    private sortByLatestOrderFirst(services: UserServiceEntity[]) {
+        services.sort((left, right) => {
+            const rightDate = this.resolveServiceSortTimestamp(right);
+            const leftDate = this.resolveServiceSortTimestamp(left);
+
+            if (rightDate !== leftDate) {
+                return rightDate - leftDate;
+            }
+
+            return Number(right.id) - Number(left.id);
+        });
+    }
+
+    private resolveServiceSortTimestamp(service: UserServiceEntity) {
+        const primaryDate = service.latestPayment?.createdAt ?? service.createdAt;
+        const timestamp = new Date(primaryDate).getTime();
+
+        return Number.isFinite(timestamp) ? timestamp : 0;
+    }
+
+    private isRecoverableRequestDocumentsQueryError(error: unknown) {
+        if (!(error instanceof QueryFailedError)) {
+            return false;
+        }
+
+        const message = String(error.message || '').toLowerCase();
+
+        return (
+            message.includes('service_request_documents') ||
+            message.includes('uploaded_by') ||
+            message.includes('source_document_id') ||
+            message.includes('document_category') ||
+            message.includes('document_name') ||
+            message.includes('requestdocuments')
+        );
     }
 }

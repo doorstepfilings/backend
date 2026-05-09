@@ -5,6 +5,7 @@ import { UserEntity } from '../../identity/infrastructure/persistence/user.entit
 import { UserServiceEntity } from '../../operations/infrastructure/persistence/user-service.entity';
 import { toUserResource } from '../../identity/application/identity.mapper';
 import { toUserServiceResource } from '../../operations/application/operations.mapper';
+import { UserServicesService } from '../../operations/application/user-services.service';
 import { NotificationService } from '../../communication/notification.service';
 
 @Injectable()
@@ -13,6 +14,7 @@ export class RMService {
         'cancelled',
         'completed',
         'rejected',
+        'approved',
     ];
 
     constructor(
@@ -20,6 +22,7 @@ export class RMService {
         private readonly usersRepository: Repository<UserEntity>,
         @InjectRepository(UserServiceEntity)
         private readonly userServicesRepository: Repository<UserServiceEntity>,
+        private readonly userServicesService: UserServicesService,
         private readonly notificationService: NotificationService,
     ) {}
 
@@ -104,10 +107,12 @@ export class RMService {
                 service: true,
                 user: true,
                 accountant: true,
-                requestDocuments: { uploadedBy: true },
             },
             order: { createdAt: 'DESC' },
         });
+
+        await this.userServicesService.populateRequestDocuments(services);
+        await this.userServicesService.populateLatestPayments(services);
 
         return services.map((service) => toUserServiceResource(service));
     }

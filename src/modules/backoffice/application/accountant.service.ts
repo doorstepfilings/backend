@@ -16,6 +16,7 @@ import {
     DocumentUploadService,
     type UploadedDocumentFile,
 } from '../../operations/application/document-upload.service';
+import { NotificationService } from '../../communication/notification.service';
 
 @Injectable()
 export class AccountantService {
@@ -28,6 +29,7 @@ export class AccountantService {
         private readonly documentsRepository: Repository<ServiceRequestDocumentEntity>,
         private readonly userServicesService: UserServicesService,
         private readonly documentUploadService: DocumentUploadService,
+        private readonly notificationService: NotificationService,
     ) {}
 
     async getAssignedUsers(accountantId: number) {
@@ -87,7 +89,10 @@ export class AccountantService {
     }
 
     async listRequests(accountantId: number, status?: string) {
-        const where: any = { accountantId, status: Not('in_cart') };
+        const where: any = { 
+            accountantId, 
+            status: status || Not(In(['in_cart', 'approved', 'completed', 'cancelled', 'rejected'] as any)) 
+        };
         if (status) where.status = status;
 
         const requests = await this.userServicesRepository.find({
@@ -95,10 +100,12 @@ export class AccountantService {
             relations: {
                 user: true,
                 service: { category: true },
-                requestDocuments: { uploadedBy: true },
             },
             order: { updatedAt: 'DESC' },
         });
+
+        await this.userServicesService.populateRequestDocuments(requests);
+        await this.userServicesService.populateLatestPayments(requests);
 
         return requests.map((request) => toUserServiceResource(request));
     }
@@ -109,11 +116,12 @@ export class AccountantService {
             relations: {
                 user: true,
                 service: { category: true },
-                requestDocuments: { uploadedBy: true },
             },
         });
 
         if (!request) throw new NotFoundException('Service request not found');
+        await this.userServicesService.populateRequestDocuments(request);
+        await this.userServicesService.populateLatestPayments(request);
         return toUserServiceResource(request);
     }
 
@@ -186,16 +194,58 @@ export class AccountantService {
             );
         }
 
-        const processedFiles = files.map((file) => ({
-            ...file,
-            documentType: file.documentType || 'internal',
-        }));
+        const processedFiles = files.map((file) => {
+            const isClientVisibleCategory =
+                file.documentCategory === 'certificate' ||
+                file.documentCategory === 'report';
 
-        await this.documentUploadService.uploadDocuments(
+            return {
+                ...file,
+                documentType:
+                    file.documentType ||
+                    (isClientVisibleCategory ? 'client' : 'internal'),
+                isFinal: file.isFinal || isClientVisibleCategory,
+            };
+        });
+
+        const uploadedDocs = await this.documentUploadService.uploadDocuments(
             requestId,
             accountantId,
             processedFiles,
         );
+
+        // Logic: if accountant upload for client certificate or report then auto-approve application
+        const finalAssetDoc = uploadedDocs.find(
+            (doc) =>
+                doc.documentType === 'client' &&
+                (doc.documentCategory === 'certificate' ||
+                    doc.documentCategory === 'report'),
+        );
+
+        if (finalAssetDoc) {
+            console.log('[AccountantService] Auto-approving request due to final asset upload:', {
+                requestId,
+                docId: finalAssetDoc.id,
+                category: finalAssetDoc.documentCategory
+            });
+
+            const updatedRequest = await this.userServicesService.updateApplicationStatus(requestId, {
+                status: 'approved',
+                certificate_url: finalAssetDoc.filePath,
+            });
+
+            // Send notification to user
+            if (updatedRequest.user) {
+                await this.notificationService.sendServiceFinalizedNotification(
+                    updatedRequest.user,
+                    {
+                        id: updatedRequest.id,
+                        service: updatedRequest.service,
+                        certificateUrl: updatedRequest.certificate_url,
+                    },
+                ).catch(err => console.error('[AccountantService] Failed to send finalized notification:', err));
+            }
+        }
 
         return this.showRequest(accountantId, requestId);
     }

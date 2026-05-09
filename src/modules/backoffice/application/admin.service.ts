@@ -4,7 +4,7 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Not, Repository } from 'typeorm';
+import { In, Not, QueryFailedError, Repository } from 'typeorm';
 import { hash } from 'bcryptjs';
 import { UserEntity } from '../../identity/infrastructure/persistence/user.entity';
 import { ServiceEntity } from '../../catalog/infrastructure/persistence/service.entity';
@@ -17,6 +17,12 @@ import { NotificationService } from '../../communication/notification.service';
 import type { UpdateApplicationStatusInput } from '../../operations/application/user-services.service';
 import { toUserServiceResource } from '../../operations/application/operations.mapper';
 import { toEnquiryResource } from '../../customer/application/customer.mapper';
+import {
+    normalizeAdminCategoryInput,
+    normalizeAdminServiceInput,
+    toAdminCategoryResource,
+    toAdminServiceResource,
+} from './admin.mapper';
 
 export type AdminCategoryInput = Pick<ServiceCategoryEntity, 'name' | 'icon'> &
     Partial<Omit<ServiceCategoryEntity, 'id' | 'name' | 'services' | 'slug'>>;
@@ -279,26 +285,53 @@ export class AdminService {
     // ─── Category Management ──────────────────────────────────────────────────
 
     async getCategories() {
-        return this.categoriesRepository
+        const categories = await this.categoriesRepository
             .createQueryBuilder('category')
             .loadRelationCountAndMap('category.services_count', 'category.services')
             .orderBy('category.name', 'ASC')
             .getMany();
+
+        return categories.map(toAdminCategoryResource);
     }
 
     async storeCategory(data: AdminCategoryInput) {
-        const slug = data.name.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '');
-        const category = this.categoriesRepository.create({ ...data, slug });
-        return this.categoriesRepository.save(category);
+        const normalized = normalizeAdminCategoryInput(data);
+
+        if (!normalized.name) {
+            throw new BadRequestException('Category name is required');
+        }
+
+        const slug = this.slugify(normalized.name);
+        const category = this.categoriesRepository.create({
+            ...normalized,
+            slug,
+        });
+
+        try {
+            const saved = await this.categoriesRepository.save(category);
+            return toAdminCategoryResource(saved);
+        } catch (error) {
+            this.rethrowFriendlyConstraintError(error, 'Category');
+            throw error;
+        }
     }
 
     async updateCategory(id: number, data: AdminCategoryInput) {
         const category = await this.categoriesRepository.findOneOrFail({ where: { id } });
-        Object.assign(category, data);
-        if (data.name) {
-            category.slug = data.name.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '');
+        const normalized = normalizeAdminCategoryInput(data);
+
+        Object.assign(category, normalized);
+        if (normalized.name) {
+            category.slug = this.slugify(normalized.name);
         }
-        return this.categoriesRepository.save(category);
+
+        try {
+            const saved = await this.categoriesRepository.save(category);
+            return toAdminCategoryResource(saved);
+        } catch (error) {
+            this.rethrowFriendlyConstraintError(error, 'Category');
+            throw error;
+        }
     }
 
     async deleteCategory(id: number) {
@@ -315,36 +348,86 @@ export class AdminService {
     // ─── Service Management ───────────────────────────────────────────────────
 
     async getServices() {
-        return this.servicesRepository.find({
+        const services = await this.servicesRepository.find({
             relations: { category: true },
             order: { id: 'DESC' },
         });
+
+        return services.map(toAdminServiceResource);
     }
 
     async getService(id: number) {
-        return this.servicesRepository.findOneOrFail({
+        const service = await this.servicesRepository.findOneOrFail({
             where: { id },
-            relations: { category: true },
+            relations: { category: true, documents: true },
         });
+
+        return toAdminServiceResource(service);
     }
 
     async storeService(data: AdminServiceInput) {
-        const slug = data.name.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '');
-        const service = this.servicesRepository.create({ ...data, slug });
-        return this.servicesRepository.save(service);
+        const normalized = normalizeAdminServiceInput(data);
+
+        if (!normalized.name) {
+            throw new BadRequestException('Service name is required');
+        }
+
+        if (!normalized.serviceCategoryId) {
+            throw new BadRequestException('service_category_id is required');
+        }
+
+        await this.ensureCategoryExists(normalized.serviceCategoryId);
+
+        const service = this.servicesRepository.create({
+            ...normalized,
+            slug: this.slugify(normalized.name),
+        });
+
+        try {
+            const saved = await this.servicesRepository.save(service);
+            return this.getService(saved.id);
+        } catch (error) {
+            this.rethrowFriendlyConstraintError(error, 'Service');
+            throw error;
+        }
     }
 
     async updateService(id: number, data: AdminServiceInput) {
         const service = await this.servicesRepository.findOneOrFail({ where: { id } });
-        Object.assign(service, data);
-        if (data.name) {
-            service.slug = data.name.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '');
+        const normalized = normalizeAdminServiceInput(data);
+
+        if (normalized.serviceCategoryId !== undefined) {
+            await this.ensureCategoryExists(normalized.serviceCategoryId);
         }
-        return this.servicesRepository.save(service);
+
+        Object.assign(service, normalized);
+        if (normalized.name) {
+            service.slug = this.slugify(normalized.name);
+        }
+
+        try {
+            await this.servicesRepository.save(service);
+            return this.getService(service.id);
+        } catch (error) {
+            this.rethrowFriendlyConstraintError(error, 'Service');
+            throw error;
+        }
     }
 
     async deleteService(id: number) {
-        await this.servicesRepository.delete(id);
+        await this.servicesRepository.findOneOrFail({ where: { id } });
+
+        try {
+            await this.servicesRepository.delete(id);
+        } catch (error) {
+            if (this.isConstraintError(error)) {
+                throw new BadRequestException(
+                    'Cannot delete service with existing applications or linked documents',
+                );
+            }
+
+            throw error;
+        }
     }
 
     // ─── Enquiry Management ───────────────────────────────────────────────────
@@ -389,9 +472,11 @@ export class AdminService {
                 user: true,
                 service: { category: true },
                 accountant: true,
-                requestDocuments: { uploadedBy: true },
             },
         });
+
+        await this.userServicesService.populateRequestDocuments(userService);
+        await this.userServicesService.populateLatestPayments(userService);
 
         return toUserServiceResource(userService);
     }
@@ -612,5 +697,44 @@ export class AdminService {
         ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 10);
 
         return activities;
+    }
+
+    private slugify(value: string) {
+        return value.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '');
+    }
+
+    private async ensureCategoryExists(serviceCategoryId: number) {
+        const category = await this.categoriesRepository.findOne({
+            where: { id: serviceCategoryId },
+        });
+
+        if (!category) {
+            throw new NotFoundException('Category not found');
+        }
+    }
+
+    private rethrowFriendlyConstraintError(error: unknown, resourceName: string) {
+        if (!this.isConstraintError(error)) {
+            return;
+        }
+
+        throw new BadRequestException(
+            `${resourceName} could not be saved because one of its values conflicts with existing data`,
+        );
+    }
+
+    private isConstraintError(error: unknown) {
+        if (!(error instanceof QueryFailedError)) {
+            return false;
+        }
+
+        const message = String(error.message || '').toLowerCase();
+
+        return (
+            message.includes('duplicate') ||
+            message.includes('unique') ||
+            message.includes('constraint') ||
+            message.includes('foreign key')
+        );
     }
 }

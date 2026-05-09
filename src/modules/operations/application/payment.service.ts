@@ -2,6 +2,7 @@ import {
     Injectable,
     BadRequestException,
     NotFoundException,
+    Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
@@ -50,6 +51,7 @@ type PaymentOrderResource = {
 
 @Injectable()
 export class PaymentService {
+    private readonly logger = new Logger(PaymentService.name);
     private readonly razorpay: Razorpay;
     private static readonly GST_RATE = 0.18;
 
@@ -243,11 +245,54 @@ export class PaymentService {
             const user = paymentWithUser?.user;
 
             if (user) {
-                await this.notificationService.sendPaymentSuccessNotification(
-                    user,
-                    payment,
-                    paymentWithUser?.userService?.service?.name ?? 'Service Purchase',
+                const relatedServices = await this.resolveRelatedUserServices(
+                    paymentWithUser,
                 );
+                const serviceName =
+                    this.buildPurchasedServicesLabel(relatedServices);
+                let invoiceAttachment:
+                    | {
+                          content: Buffer;
+                          contentType: string;
+                          filename: string;
+                      }
+                    | undefined;
+
+                try {
+                    const invoicePdf = await this.generateInvoicePdfForPayment(
+                        paymentWithUser,
+                    );
+
+                    invoiceAttachment = {
+                        content: invoicePdf,
+                        contentType: 'application/pdf',
+                        filename: `invoice_${payment.invoiceUniqueId ?? payment.id}.pdf`,
+                    };
+                } catch (error) {
+                    this.logger.warn(
+                        `Failed to generate invoice PDF for payment ${payment.id}: ${
+                            (error as Error).message
+                        }`,
+                    );
+                }
+
+                try {
+                    await this.notificationService.sendPaymentSuccessNotification(
+                        user,
+                        payment,
+                        serviceName,
+                        invoiceAttachment
+                            ? { attachments: [invoiceAttachment] }
+                            : {},
+                    );
+                } catch (error) {
+                    this.logger.error(
+                        `Failed to send payment success email for payment ${payment.id}: ${
+                            (error as Error).message
+                        }`,
+                        (error as Error).stack,
+                    );
+                }
             }
 
 
@@ -391,32 +436,17 @@ export class PaymentService {
             );
         }
 
-        const relatedServiceIds = this.resolvePaymentServiceIds(payment);
-        const relatedServices =
-            relatedServiceIds.length > 0
-                ? await this.userServicesRepository.find({
-                      where: { id: In(relatedServiceIds) },
-                      relations: { service: true },
-                  })
-                : [];
-        const relatedServicesById = new Map(
-            relatedServices.map((service) => [service.id, service]),
-        );
-        const orderedServices = relatedServiceIds
-            .map((serviceId) => {
-                if (
-                    payment.userService &&
-                    payment.userService.id === serviceId &&
-                    payment.userService.service
-                ) {
-                    return payment.userService;
-                }
+        return this.generateInvoicePdfForPayment(payment);
+    }
 
-                return relatedServicesById.get(serviceId) ?? null;
-            })
-            .filter(
-                (service): service is UserServiceEntity => service !== null,
-            );
+    private async generateInvoicePdfForPayment(payment: PaymentEntity) {
+        const context = await this.buildInvoiceContext(payment);
+        return this.pdfService.generatePdf('invoice', context);
+    }
+
+    private async buildInvoiceContext(payment: PaymentEntity) {
+        const orderedServices = await this.resolveRelatedUserServices(payment);
+        const relatedServiceIds = this.resolvePaymentServiceIds(payment);
 
         const services =
             orderedServices.length > 0
@@ -488,8 +518,7 @@ export class PaymentService {
                 grandTotal,
             }
         };
-
-        return this.pdfService.generatePdf('invoice', context);
+        return context;
     }
 
     private resolvePaymentServiceIds(payment: PaymentEntity) {
@@ -514,6 +543,56 @@ export class PaymentService {
             normalizedPaymentStatus === 'paid' ||
             normalizedPaymentStatus === 'success'
         );
+    }
+
+    private async resolveRelatedUserServices(payment: PaymentEntity) {
+        const relatedServiceIds = this.resolvePaymentServiceIds(payment);
+        const relatedServices =
+            relatedServiceIds.length > 0
+                ? await this.userServicesRepository.find({
+                      where: { id: In(relatedServiceIds) },
+                      relations: { service: true },
+                  })
+                : [];
+        const relatedServicesById = new Map(
+            relatedServices.map((service) => [service.id, service]),
+        );
+
+        return relatedServiceIds
+            .map((serviceId) => {
+                if (
+                    payment.userService &&
+                    payment.userService.id === serviceId &&
+                    payment.userService.service
+                ) {
+                    return payment.userService;
+                }
+
+                return relatedServicesById.get(serviceId) ?? null;
+            })
+            .filter(
+                (service): service is UserServiceEntity => service !== null,
+            );
+    }
+
+    private buildPurchasedServicesLabel(services: UserServiceEntity[]) {
+        const serviceNames = services
+            .map((service) => service.service?.name?.trim())
+            .filter((name): name is string => Boolean(name));
+
+        if (serviceNames.length === 0) {
+            return 'Service Purchase';
+        }
+
+        if (serviceNames.length === 1) {
+            return serviceNames[0];
+        }
+
+        if (serviceNames.length === 2) {
+            return `${serviceNames[0]} and ${serviceNames[1]}`;
+        }
+
+        return `${serviceNames[0]} and ${serviceNames.length - 1} more services`;
     }
 
     private toPaymentOrderResource(

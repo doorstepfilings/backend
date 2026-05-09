@@ -159,10 +159,11 @@ describe('PaymentService', () => {
             notes: { user_service_id: 5 },
         };
 
-        paymentsRepo.findOne.mockResolvedValue(mockPayment);
+        paymentsRepo.findOne
+            .mockResolvedValueOnce(mockPayment)
+            .mockResolvedValueOnce({ ...mockPayment, user: null, userService: null });
         paymentsRepo.save.mockResolvedValue(mockPayment);
         userServicesRepo.update.mockResolvedValue({ affected: 1 });
-        userServicesRepo.findOne.mockResolvedValue(null); // no user service for notification
 
         const result = await service.verifyPayment({
             payment_id: 17,
@@ -180,6 +181,174 @@ describe('PaymentService', () => {
         });
         expect(mockPayment.status).toBe('paid');
         expect(mockPayment.paymentStatus).toBe('paid');
+        expect(paymentsRepo.save).toHaveBeenCalled();
+    });
+
+    it('emails a professional invoice PDF after successful payment', async () => {
+        const signature = crypto
+            .createHmac('sha256', 'secret')
+            .update('order_invoice|payment_invoice')
+            .digest('hex');
+
+        const paymentRecord = {
+            id: 18,
+            amount: 118,
+            createdAt: new Date('2026-05-09T09:00:00.000Z'),
+            currency: 'INR',
+            invoiceUniqueId: 'INV-18',
+            notes: { user_service_id: 5 },
+            orderUniqueId: 'ORD-18',
+            paymentProvider: 'razorpay',
+            paymentProviderOrderId: 'order_invoice',
+            paymentProviderTransactionId: null,
+            paymentStatus: 'pending',
+            status: 'pending',
+            userServiceId: 5,
+        };
+        const hydratedPayment = {
+            ...paymentRecord,
+            paymentProviderTransactionId: 'payment_invoice',
+            paymentStatus: 'paid',
+            status: 'paid',
+            user: {
+                email: 'buyer@example.com',
+                mobileNumber: '9999999999',
+                name: 'Buyer Name',
+            },
+            userService: {
+                amount: '100.00',
+                formData: { pricing_plan: 'Starter' },
+                id: 5,
+                service: { name: 'GST Registration' },
+            },
+        };
+
+        paymentsRepo.findOne
+            .mockResolvedValueOnce(paymentRecord)
+            .mockResolvedValueOnce(hydratedPayment);
+        paymentsRepo.save.mockResolvedValue(paymentRecord);
+        userServicesRepo.update.mockResolvedValue({ affected: 1 });
+        userServicesRepo.find.mockResolvedValue([
+            {
+                amount: '100.00',
+                formData: { pricing_plan: 'Starter' },
+                id: 5,
+                service: { name: 'GST Registration' },
+            },
+        ]);
+        (
+            notificationService.sendPaymentSuccessNotification as jest.Mock
+        ).mockResolvedValue(undefined);
+
+        await service.verifyPayment({
+            payment_id: 18,
+            razorpay_order_id: 'order_invoice',
+            razorpay_payment_id: 'payment_invoice',
+            razorpay_signature: signature,
+        });
+
+        expect(pdfService.generatePdf).toHaveBeenCalledWith(
+            'invoice',
+            expect.objectContaining({
+                invoiceId: 'INV-18',
+                orderId: 'ORD-18',
+                user: expect.objectContaining({
+                    email: 'buyer@example.com',
+                    name: 'Buyer Name',
+                }),
+            }),
+        );
+        expect(
+            notificationService.sendPaymentSuccessNotification,
+        ).toHaveBeenCalledWith(
+            hydratedPayment.user,
+            expect.objectContaining({
+                invoiceUniqueId: 'INV-18',
+                orderUniqueId: 'ORD-18',
+            }),
+            'GST Registration',
+            {
+                attachments: [
+                    expect.objectContaining({
+                        content: Buffer.from('pdf'),
+                        contentType: 'application/pdf',
+                        filename: 'invoice_INV-18.pdf',
+                    }),
+                ],
+            },
+        );
+    });
+
+    it('keeps payment verification successful even if the invoice email fails', async () => {
+        const signature = crypto
+            .createHmac('sha256', 'secret')
+            .update('order_mail_fail|payment_mail_fail')
+            .digest('hex');
+
+        const paymentRecord = {
+            id: 19,
+            amount: 118,
+            createdAt: new Date('2026-05-09T09:30:00.000Z'),
+            currency: 'INR',
+            invoiceUniqueId: 'INV-19',
+            notes: { user_service_id: 7 },
+            orderUniqueId: 'ORD-19',
+            paymentProvider: 'razorpay',
+            paymentProviderOrderId: 'order_mail_fail',
+            paymentProviderTransactionId: null,
+            paymentStatus: 'pending',
+            status: 'pending',
+            userServiceId: 7,
+        };
+        const hydratedPayment = {
+            ...paymentRecord,
+            paymentProviderTransactionId: 'payment_mail_fail',
+            paymentStatus: 'paid',
+            status: 'paid',
+            user: {
+                email: 'buyer@example.com',
+                mobileNumber: '9999999999',
+                name: 'Buyer Name',
+            },
+            userService: {
+                amount: '100.00',
+                formData: { pricing_plan: 'Starter' },
+                id: 7,
+                service: { name: 'Income Tax Filing' },
+            },
+        };
+
+        paymentsRepo.findOne
+            .mockResolvedValueOnce(paymentRecord)
+            .mockResolvedValueOnce(hydratedPayment);
+        paymentsRepo.save.mockResolvedValue(paymentRecord);
+        userServicesRepo.update.mockResolvedValue({ affected: 1 });
+        userServicesRepo.find.mockResolvedValue([
+            {
+                amount: '100.00',
+                formData: { pricing_plan: 'Starter' },
+                id: 7,
+                service: { name: 'Income Tax Filing' },
+            },
+        ]);
+        (
+            notificationService.sendPaymentSuccessNotification as jest.Mock
+        ).mockRejectedValue(new Error('SMTP unavailable'));
+
+        const result = await service.verifyPayment({
+            payment_id: 19,
+            razorpay_order_id: 'order_mail_fail',
+            razorpay_payment_id: 'payment_mail_fail',
+            razorpay_signature: signature,
+        });
+
+        expect(result).toEqual({
+            invoice_unique_id: 'INV-19',
+            order_unique_id: 'ORD-19',
+            payment_id: 19,
+            service_ids: ['7'],
+            success: true,
+        });
         expect(paymentsRepo.save).toHaveBeenCalled();
     });
 

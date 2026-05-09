@@ -4,6 +4,12 @@ import { ConfigService } from '@nestjs/config';
 import { Twilio } from 'twilio';
 import type { AppEnvironment } from '../../config/environment';
 
+export type EmailAttachment = {
+    content: Buffer;
+    contentType?: string;
+    filename: string;
+};
+
 @Injectable()
 export class NotificationService {
     private readonly logger = new Logger(NotificationService.name);
@@ -33,6 +39,7 @@ export class NotificationService {
         subject: string,
         template: string,
         context: Record<string, unknown>,
+        options: { attachments?: EmailAttachment[] } = {},
     ) {
         try {
             await this.mailerService.sendMail({
@@ -40,6 +47,9 @@ export class NotificationService {
                 subject,
                 template: template,
                 context: { ...context, year: this.year, dashboardUrl: this.dashboardUrl },
+                ...(options.attachments?.length
+                    ? { attachments: options.attachments }
+                    : {}),
             });
 
             this.logger.log(`Email sent to ${to} [${template}]`);
@@ -107,15 +117,17 @@ export class NotificationService {
         user: { email?: string | null; name?: string | null },
         payment: { amount: number; orderUniqueId?: string | null; invoiceUniqueId?: string | null },
         serviceName: string = 'Service Purchase',
+        options: { attachments?: EmailAttachment[] } = {},
     ) {
         if (!user.email) return Promise.resolve();
         return this.sendEmail(user.email, 'Payment Successful - DoorstepFilings', 'payment-success', {
             userName: user.name ?? 'User',
             amount: Number(payment.amount).toFixed(2),
-
+            invoiceUniqueId: payment.invoiceUniqueId ?? 'N/A',
+            hasInvoiceAttachment: Boolean(options.attachments?.length),
             orderUniqueId: payment.orderUniqueId ?? 'N/A',
             serviceName,
-        });
+        }, options);
     }
 
 

@@ -112,6 +112,9 @@ export class UserServiceEntity {
     @OneToMany(() => PaymentEntity, (payment) => payment.userService)
     payments!: PaymentEntity[];
 
+    // Transient runtime-only helper populated by application services.
+    latestPayment?: PaymentEntity | null;
+
     @CreateDateColumn({ name: 'created_at' })
     createdAt!: Date;
 
