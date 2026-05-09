@@ -46,7 +46,7 @@ export class NotificationService {
                 to,
                 subject,
                 template: template,
-                context: { ...context, year: this.year, dashboardUrl: this.dashboardUrl },
+                context: { ...context, subject, year: this.year, dashboardUrl: this.dashboardUrl },
                 ...(options.attachments?.length
                     ? { attachments: options.attachments }
                     : {}),

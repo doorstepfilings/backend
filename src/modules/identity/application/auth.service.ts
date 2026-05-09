@@ -241,43 +241,53 @@ export class AuthService {
 
     async forgotPassword(email: string) {
         const normalizedEmail = email.trim().toLowerCase();
-        const user = await this.usersRepository.findOne({
-            where: { email: normalizedEmail },
-        });
+        
+        try {
+            const user = await this.usersRepository.findOne({
+                where: { email: normalizedEmail },
+            });
 
-        if (!user) {
-            return {};
-        }
+            if (!user) {
+                // Return success even if user not found for security
+                return {};
+            }
 
-        const resetToken = randomToken(10);
-        const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
-        const appEnvironment =
-            this.configService.getOrThrow<AppEnvironment>('app');
-        const resetUrl = `${appEnvironment.frontendUrl}/reset-password/${resetToken}?email=${encodeURIComponent(normalizedEmail)}`;
+            const resetToken = randomToken(10);
+            const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+            const appEnvironment = this.configService.getOrThrow<AppEnvironment>('app');
+            
+            const frontendUrl = appEnvironment.frontendUrl.endsWith('/') 
+                ? appEnvironment.frontendUrl.slice(0, -1) 
+                : appEnvironment.frontendUrl;
+                
+            const resetUrl = `${frontendUrl}/reset-password/${resetToken}?email=${encodeURIComponent(normalizedEmail)}`;
 
-        await this.otpRepository.save(
-            this.otpRepository.create({
-                identifier: `reset:${normalizedEmail}`,
-                otp: resetToken,
-                expiresAt,
-            }),
-        );
+            await this.otpRepository.save(
+                this.otpRepository.create({
+                    identifier: `reset:${normalizedEmail}`,
+                    otp: resetToken,
+                    expiresAt,
+                }),
+            );
 
-        await this.notificationService.sendEmail(
-            normalizedEmail,
-            'Reset your Doorstep password',
-            'password-reset',
-            {
+            await this.notificationService.sendEmail(
+                normalizedEmail,
+                'Reset your Doorstep password',
+                'password-reset',
+                {
+                    reset_url: resetUrl,
+                    token: resetToken,
+                },
+            );
+
+            return this.devOnlyPayload({
+                reset_token: resetToken,
                 reset_url: resetUrl,
-                token: resetToken,
-            },
-        );
-
-
-        return this.devOnlyPayload({
-            reset_token: resetToken,
-            reset_url: resetUrl,
-        });
+            });
+        } catch (error) {
+            console.error(`[ForgotPassword Error] for ${normalizedEmail}:`, error);
+            throw error;
+        }
     }
 
     async resetPassword(email: string, token: string, password: string) {
