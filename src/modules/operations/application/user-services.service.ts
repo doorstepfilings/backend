@@ -614,8 +614,8 @@ export class UserServicesService {
 
         const payments = await this.paymentsRepository
             .createQueryBuilder('payment')
-            .where('payment.userServiceId IN (:...serviceIds)', { serviceIds })
-            .orWhere('payment.userId IN (:...userIds)', { userIds })
+            .where('(payment.userServiceId IN (:...serviceIds) OR payment.userId IN (:...userIds))', { serviceIds, userIds })
+            .andWhere('payment.status != :status', { status: 'abandoned' })
             .orderBy('payment.createdAt', 'DESC')
             .addOrderBy('payment.id', 'DESC')
             .getMany();

@@ -5,7 +5,7 @@ import {
     Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, IsNull, Not } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { UserServiceEntity } from '../infrastructure/persistence/user-service.entity';
 import { PaymentEntity } from '../infrastructure/persistence/payment.entity';
@@ -97,19 +97,36 @@ export class PaymentService {
         try {
             const order = await this.createRazorpayOrder(options);
 
-            // Persist payment record
-            const payment = this.paymentsRepository.create({
-                userId: userService.userId,
-                userServiceId: userService.id,
-                amount: totals.grandTotal,
-                paymentProviderOrderId: order.id,
-                orderUniqueId: UniqueIDGenerator.generateOrderID(),
-                invoiceUniqueId: UniqueIDGenerator.generateInvoiceID(),
-                notes: { user_service_id: userService.id },
-                status: 'pending',
-                paymentStatus: 'pending',
+            // Re-use existing pending or failed payment for this service request if it exists
+            let payment = await this.paymentsRepository.findOne({
+                where: {
+                    userServiceId: userService.id,
+                    status: In(['pending', 'failed'])
+                }
             });
-            await this.paymentsRepository.save(payment);
+
+            if (payment) {
+                payment.paymentProviderOrderId = order.id;
+                payment.amount = totals.grandTotal;
+                payment.status = 'pending';
+                payment.paymentStatus = 'pending';
+                // Move it to the top of the history
+                payment.createdAt = new Date();
+                await this.paymentsRepository.save(payment);
+            } else {
+                payment = this.paymentsRepository.create({
+                    userId: userService.userId,
+                    userServiceId: userService.id,
+                    amount: totals.grandTotal,
+                    paymentProviderOrderId: order.id,
+                    orderUniqueId: UniqueIDGenerator.generateOrderID(),
+                    invoiceUniqueId: UniqueIDGenerator.generateInvoiceID(),
+                    notes: { user_service_id: userService.id },
+                    status: 'pending',
+                    paymentStatus: 'pending',
+                });
+                await this.paymentsRepository.save(payment);
+            }
 
             return {
                 amount: totals.grandTotal,
@@ -162,6 +179,12 @@ export class PaymentService {
 
         try {
             const order = await this.createRazorpayOrder(options);
+
+            // Mark previous pending cart payments as abandoned to avoid clutter
+            await this.paymentsRepository.update(
+                { userId, status: 'pending', userServiceId: IsNull() },
+                { status: 'abandoned' }
+            );
 
             // Persist payment record for cart
             const payment = this.paymentsRepository.create({
@@ -308,6 +331,24 @@ export class PaymentService {
         }
     }
 
+    async failPayment(paymentId: number, reason?: string) {
+        const payment = await this.paymentsRepository.findOne({
+            where: { id: paymentId },
+        });
+
+        if (payment && payment.status === 'pending') {
+            payment.status = 'failed';
+            payment.paymentStatus = 'failed';
+            payment.notes = {
+                ...((payment.notes as object) || {}),
+                failure_reason: reason || 'User cancelled or gateway failure',
+            };
+            await this.paymentsRepository.save(payment);
+        }
+
+        return { success: true };
+    }
+
     async processRefund(paymentId: number, reason?: string) {
         const payment = await this.paymentsRepository.findOne({
             where: { id: paymentId },
@@ -390,7 +431,10 @@ export class PaymentService {
 
     async myOrders(userId: number): Promise<PaymentOrderResource[]> {
         const payments = await this.paymentsRepository.find({
-            where: { userId },
+            where: { 
+                userId,
+                status: Not('abandoned')
+            },
             relations: { userService: { service: true } },
             order: { createdAt: 'DESC' },
         });

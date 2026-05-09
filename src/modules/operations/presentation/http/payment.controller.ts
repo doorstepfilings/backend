@@ -47,6 +47,15 @@ export class PaymentController {
         return successResponse(result);
     }
 
+    @Post('razorpay/fail')
+    async failPayment(
+        @Body('payment_id') paymentId: number,
+        @Body('reason') reason?: string,
+    ) {
+        const result = await this.paymentService.failPayment(paymentId, reason);
+        return successResponse(result);
+    }
+
     /**
      * Admin-only: Process a refund for a payment record.
      * POST /payments/:id/refund
