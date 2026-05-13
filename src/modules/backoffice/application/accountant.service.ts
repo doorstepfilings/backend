@@ -4,14 +4,10 @@ import {
     BadRequestException,
     UnauthorizedException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not, In } from 'typeorm';
-import { UserEntity } from '../../identity/infrastructure/persistence/user.entity';
-import { UserServiceEntity } from '../../operations/infrastructure/persistence/user-service.entity';
+import { PrismaService } from '../../../shared/services/prisma.service';
 import { toUserResource } from '../../identity/application/identity.mapper';
 import { toUserServiceResource } from '../../operations/application/operations.mapper';
 import { UserServicesService, UpdateApplicationStatusInput } from '../../operations/application/user-services.service';
-import { ServiceRequestDocumentEntity } from '../../operations/infrastructure/persistence/service-request-document.entity';
 import {
     DocumentUploadService,
     type UploadedDocumentFile,
@@ -21,34 +17,29 @@ import { NotificationService } from '../../communication/notification.service';
 @Injectable()
 export class AccountantService {
     constructor(
-        @InjectRepository(UserEntity)
-        private readonly usersRepository: Repository<UserEntity>,
-        @InjectRepository(UserServiceEntity)
-        private readonly userServicesRepository: Repository<UserServiceEntity>,
-        @InjectRepository(ServiceRequestDocumentEntity)
-        private readonly documentsRepository: Repository<ServiceRequestDocumentEntity>,
+        private readonly prisma: PrismaService,
         private readonly userServicesService: UserServicesService,
         private readonly documentUploadService: DocumentUploadService,
         private readonly notificationService: NotificationService,
     ) {}
 
     async getAssignedUsers(accountantId: number) {
-        const users = await this.usersRepository.find({
+        const users = (await this.prisma.user.findMany({
             where: { accountantId, role: 'user' },
-            relations: { 
+            include: { 
                 regionalManager: true,
                 accountant: true
             },
-            order: { name: 'ASC' },
-        });
+            orderBy: { name: 'asc' },
+        })) as any[];
 
         if (users.length === 0) return [];
 
         // Fetch services for all these users in one query
         const userIds = users.map(u => u.id);
-        const allServices = await this.userServicesRepository.find({
-            where: { userId: In(userIds) as any },
-            relations: { service: true }
+        const allServices = await this.prisma.userService.findMany({
+            where: { userId: { in: userIds } },
+            include: { service: true }
         });
 
         // Group services by userId
@@ -67,21 +58,21 @@ export class AccountantService {
     }
 
     async getUserById(accountantId: number, id: number) {
-        const user = await this.usersRepository.findOne({
+        const user = (await this.prisma.user.findFirst({
             where: { id, accountantId, role: 'user' },
-            relations: { 
+            include: { 
                 regionalManager: true,
                 accountant: true,
             },
-        });
+        })) as any;
         
         if (!user) throw new NotFoundException('Client not found');
 
         // Fetch all services for this user
-        const services = await this.userServicesRepository.find({
+        const services = await this.prisma.userService.findMany({
             where: { userId: id },
-            relations: { service: true },
-            order: { updatedAt: 'DESC' }
+            include: { service: true },
+            orderBy: { updatedAt: 'desc' }
         });
 
         (user as any).services = services;
@@ -91,18 +82,21 @@ export class AccountantService {
     async listRequests(accountantId: number, status?: string) {
         const where: any = { 
             accountantId, 
-            status: status || Not(In(['in_cart', 'approved', 'completed', 'cancelled', 'rejected'] as any)) 
         };
-        if (status) where.status = status;
+        if (status) {
+            where.status = status;
+        } else {
+            where.status = { notIn: ['in_cart', 'approved', 'completed', 'cancelled', 'rejected'] };
+        }
 
-        const requests = await this.userServicesRepository.find({
+        const requests = (await this.prisma.userService.findMany({
             where,
-            relations: {
+            include: {
                 user: true,
-                service: { category: true },
+                service: { include: { category: true } },
             },
-            order: { updatedAt: 'DESC' },
-        });
+            orderBy: { updatedAt: 'desc' },
+        })) as any[];
 
         await this.userServicesService.populateRequestDocuments(requests);
         await this.userServicesService.populateLatestPayments(requests);
@@ -111,13 +105,13 @@ export class AccountantService {
     }
 
     async showRequest(accountantId: number, id: number) {
-        const request = await this.userServicesRepository.findOne({
+        const request = (await this.prisma.userService.findFirst({
             where: { id, accountantId },
-            relations: {
+            include: {
                 user: true,
-                service: { category: true },
+                service: { include: { category: true } },
             },
-        });
+        })) as any;
 
         if (!request) throw new NotFoundException('Service request not found');
         await this.userServicesService.populateRequestDocuments(request);
@@ -130,7 +124,7 @@ export class AccountantService {
         id: number,
         data: UpdateApplicationStatusInput,
     ) {
-        await this.userServicesRepository.findOneOrFail({
+        await this.prisma.userService.findFirstOrThrow({
             where: { id, accountantId },
         });
 
@@ -144,7 +138,7 @@ export class AccountantService {
         status: 'verified' | 'rejected',
         notes?: string,
     ) {
-        await this.userServicesRepository.findOneOrFail({
+        await this.prisma.userService.findFirstOrThrow({
             where: { id: userServiceId, accountantId },
         });
 
@@ -153,18 +147,18 @@ export class AccountantService {
 
     async listDocuments(accountantId: number, requestId: number) {
         await this.showRequest(accountantId, requestId); // Verification
-        return this.documentsRepository.find({
+        return (await this.prisma.serviceRequestDocument.findMany({
             where: { userServiceId: requestId },
-            relations: { uploadedBy: true },
-            order: { createdAt: 'DESC' },
-        });
+            include: { uploadedBy: true },
+            orderBy: { createdAt: 'desc' },
+        })) as any[];
     }
 
     async deleteDocument(accountantId: number, docId: number) {
-        const doc = await this.documentsRepository.findOne({
+        const doc = (await this.prisma.serviceRequestDocument.findUnique({
             where: { id: docId },
-            relations: { userService: true },
-        });
+            include: { userService: true },
+        })) as any;
 
         if (!doc) throw new NotFoundException('Document not found');
         if (doc.userService.accountantId != accountantId) {
@@ -180,7 +174,7 @@ export class AccountantService {
         requestId: number,
         files: UploadedDocumentFile[],
     ) {
-        const request = await this.userServicesRepository.findOne({
+        const request = await this.prisma.userService.findFirst({
             where: { id: requestId, accountantId },
         });
 
@@ -255,7 +249,7 @@ export class AccountantService {
         requestId: number,
         docId: number,
     ) {
-        const request = await this.userServicesRepository.findOne({
+        const request = await this.prisma.userService.findFirst({
             where: { id: requestId, accountantId },
         });
 
@@ -263,7 +257,7 @@ export class AccountantService {
             throw new NotFoundException('Service request not found');
         }
 
-        const document = await this.documentsRepository.findOne({
+        const document = await this.prisma.serviceRequestDocument.findFirst({
             where: { id: docId, userServiceId: requestId },
         });
 
@@ -282,7 +276,7 @@ export class AccountantService {
             throw new BadRequestException('Revision notes are required');
         }
 
-        const request = await this.userServicesRepository.findOne({
+        const request = await this.prisma.userService.findFirst({
             where: { id: requestId, accountantId },
         });
 
@@ -299,13 +293,13 @@ export class AccountantService {
         await this.userServicesService.updateApplicationStatus(requestId, {
             status: 'under_review',
         });
-        await this.userServicesRepository.update(
-            { id: requestId, accountantId },
-            {
+        await this.prisma.userService.update({
+            where: { id: requestId },
+            data: {
                 revisionNotes: trimmedNotes,
                 updateNote: null,
             },
-        );
+        });
 
         return this.showRequest(accountantId, requestId);
     }

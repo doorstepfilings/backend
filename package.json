@@ -19,7 +19,11 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "seed": "ts-node src/database/seed.ts"
+    "migrate:legacy": "ts-node scripts/migrate-legacy.ts",
+    "migrate:verify": "ts-node scripts/verify-legacy-migration.ts",
+    "seed:extract-legacy-services": "node scripts/generate-services-seed-data.mjs",
+    "seed:dev": "ts-node src/database/seed.ts",
+    "seed": "npm run seed:dev"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.3.4",
@@ -30,7 +34,7 @@
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/serve-static": "^5.0.5",
-    "@nestjs/typeorm": "^11.0.1",
+    "@prisma/adapter-mariadb": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "bcryptjs": "^3.0.3",
     "class-transformer": "^0.5.1",
@@ -48,8 +52,7 @@
     "razorpay": "^2.9.6",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "twilio": "^6.0.0",
-    "typeorm": "^0.3.28"
+    "twilio": "^6.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -60,6 +63,7 @@
     "@types/compression": "^1.8.1",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
+    "@types/multer": "^2.1.0",
     "@types/node": "^24.0.0",
     "@types/passport-jwt": "^4.0.1",
     "@types/puppeteer": "^5.4.7",

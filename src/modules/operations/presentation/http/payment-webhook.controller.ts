@@ -5,15 +5,8 @@ import {
     Headers,
     BadRequestException,
     Logger,
-    RawBodyRequest,
-    Req,
 } from '@nestjs/common';
-import { Request } from 'express';
-import { PaymentService } from '../../application/payment.service';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { PaymentEntity } from '../../infrastructure/persistence/payment.entity';
-import { UserServiceEntity } from '../../infrastructure/persistence/user-service.entity';
+import { PrismaService } from '../../../../shared/services/prisma.service';
 import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
 
@@ -22,12 +15,8 @@ export class PaymentWebhookController {
     private readonly logger = new Logger(PaymentWebhookController.name);
 
     constructor(
-        private readonly paymentService: PaymentService,
+        private readonly prisma: PrismaService,
         private readonly configService: ConfigService,
-        @InjectRepository(PaymentEntity)
-        private readonly paymentsRepository: Repository<PaymentEntity>,
-        @InjectRepository(UserServiceEntity)
-        private readonly userServicesRepository: Repository<UserServiceEntity>,
     ) {}
 
     @Post('webhook')
@@ -58,29 +47,33 @@ export class PaymentWebhookController {
 
             if (razorpayOrderId) {
                 // Find the matching payment record by provider order ID
-                const payment = await this.paymentsRepository.findOne({
+                const payment = await this.prisma.payment.findFirst({
                     where: { paymentProviderOrderId: razorpayOrderId },
                 });
 
                 if (payment && payment.status !== 'paid') {
-                    payment.status = 'paid';
-                    payment.paymentStatus = 'paid';
-                    payment.paymentProviderTransactionId = razorpayPaymentId;
-                    payment.paymentProviderStatus = 'captured';
-                    await this.paymentsRepository.save(payment);
+                    await this.prisma.payment.update({
+                        where: { id: payment.id },
+                        data: {
+                            status: 'paid',
+                            paymentStatus: 'paid',
+                            paymentProviderTransactionId: razorpayPaymentId,
+                            paymentProviderStatus: 'captured',
+                        }
+                    });
 
                     // Update associated user services
                     const cartItemIds = (payment.notes as any)?.cart_item_ids;
                     if (Array.isArray(cartItemIds) && cartItemIds.length > 0) {
-                        await this.userServicesRepository.update(
-                            cartItemIds,
-                            { status: 'paid', paymentStatus: 'success' },
-                        );
+                        await this.prisma.userService.updateMany({
+                            where: { id: { in: cartItemIds } },
+                            data: { status: 'paid', paymentStatus: 'success' },
+                        });
                     } else if (payment.userServiceId) {
-                        await this.userServicesRepository.update(
-                            payment.userServiceId,
-                            { status: 'paid', paymentStatus: 'success' },
-                        );
+                        await this.prisma.userService.update({
+                            where: { id: payment.userServiceId },
+                            data: { status: 'paid', paymentStatus: 'success' },
+                        });
                     }
 
                     this.logger.log(
@@ -95,14 +88,18 @@ export class PaymentWebhookController {
             const razorpayOrderId: string = refundEntity?.payment_id;
 
             if (razorpayOrderId) {
-                const payment = await this.paymentsRepository.findOne({
+                const payment = await this.prisma.payment.findFirst({
                     where: { paymentProviderOrderId: razorpayOrderId },
                 });
 
                 if (payment) {
-                    payment.refundStatus = 'processed';
-                    payment.refundId = refundEntity?.id;
-                    await this.paymentsRepository.save(payment);
+                    await this.prisma.payment.update({
+                        where: { id: payment.id },
+                        data: {
+                            refundStatus: 'processed',
+                            refundId: refundEntity?.id,
+                        }
+                    });
                     this.logger.log(`Refund processed via webhook: ${refundEntity?.id}`);
                 }
             }

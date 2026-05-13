@@ -1,0 +1,62 @@
+import {
+    assertDifferentDatabases,
+    buildMysqlConnectionUrl,
+    getLegacyDatabaseConfig,
+    getPrimaryDatabaseConfig,
+} from './database-env';
+
+describe('database-env', () => {
+    it('builds a mysql url from DB-style variables', () => {
+        const url = buildMysqlConnectionUrl({
+            database: 'doorstep_nest',
+            host: '127.0.0.1',
+            password: '',
+            port: 3306,
+            username: 'root',
+        });
+
+        expect(url).toBe('mysql://root@127.0.0.1:3306/doorstep_nest');
+    });
+
+    it('returns null when no legacy database config is provided', () => {
+        expect(getLegacyDatabaseConfig({})).toBeNull();
+    });
+
+    it('reads the primary database config from DB variables', () => {
+        expect(
+            getPrimaryDatabaseConfig({
+                DB_DATABASE: 'doorstep_nest',
+                DB_HOST: '127.0.0.1',
+                DB_PASSWORD: '',
+                DB_PORT: '3306',
+                DB_USERNAME: 'root',
+            }),
+        ).toEqual({
+            connectionLimit: 10,
+            database: 'doorstep_nest',
+            host: '127.0.0.1',
+            password: '',
+            port: 3306,
+            username: 'root',
+        });
+    });
+
+    it('rejects using the same database for target and legacy migration', () => {
+        expect(() =>
+            assertDifferentDatabases(
+                {
+                    database: 'doorstepfilings',
+                    host: '127.0.0.1',
+                    port: 3306,
+                    username: 'root',
+                },
+                {
+                    database: 'doorstepfilings',
+                    host: '127.0.0.1',
+                    port: 3306,
+                    username: 'root',
+                },
+            ),
+        ).toThrow(/same database/i);
+    });
+});

@@ -6,12 +6,9 @@ import {
     ConflictException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
-import { Repository } from 'typeorm';
 import { hash, compare } from 'bcryptjs';
-import { UserEntity } from '../infrastructure/persistence/user.entity';
-import { OtpVerificationEntity } from '../infrastructure/persistence/otp-verification.entity';
+import { PrismaService } from '../../../shared/services/prisma.service';
 import { LoginDto } from '../presentation/http/dto/login.dto';
 import { RegisterDto } from '../presentation/http/dto/register.dto';
 import { toUserResource } from './identity.mapper';
@@ -27,10 +24,7 @@ type JwtPayload = {
 @Injectable()
 export class AuthService {
     constructor(
-        @InjectRepository(UserEntity)
-        private readonly usersRepository: Repository<UserEntity>,
-        @InjectRepository(OtpVerificationEntity)
-        private readonly otpRepository: Repository<OtpVerificationEntity>,
+        private readonly prisma: PrismaService,
         private readonly jwtService: JwtService,
         private readonly configService: ConfigService,
         private readonly notificationService: NotificationService,
@@ -38,11 +32,11 @@ export class AuthService {
 
     async login(loginDto: LoginDto) {
         const email = loginDto.email.trim().toLowerCase();
-        const user = await this.usersRepository.findOne({
+        const user = await this.prisma.user.findUnique({
             where: {
                 email,
             },
-            relations: {
+            include: {
                 accountant: true,
                 regionalManager: true,
             },
@@ -75,11 +69,11 @@ export class AuthService {
     }
 
     async getCurrentUser(userId: number) {
-        const user = await this.usersRepository.findOne({
+        const user = await this.prisma.user.findUnique({
             where: {
                 id: userId,
             },
-            relations: {
+            include: {
                 accountant: true,
                 regionalManager: true,
             },
@@ -94,13 +88,13 @@ export class AuthService {
 
     async register(dto: RegisterDto) {
         const email = dto.email.trim().toLowerCase();
-        const verifiedOtp = await this.otpRepository.findOne({
+        const verifiedOtp = await this.prisma.otpVerification.findFirst({
             where: {
                 identifier: email,
                 verified: true,
             },
-            order: {
-                createdAt: 'DESC',
+            orderBy: {
+                createdAt: 'desc',
             },
         });
 
@@ -110,8 +104,13 @@ export class AuthService {
             );
         }
 
-        const existing = await this.usersRepository.findOne({
-            where: [{ email }, { mobileNumber: dto.mobile_number }],
+        const existing = await this.prisma.user.findFirst({
+            where: {
+                OR: [
+                    { email },
+                    { mobileNumber: dto.mobile_number }
+                ]
+            },
         });
 
         if (existing) {
@@ -123,34 +122,28 @@ export class AuthService {
 
         // If direct rm_id is provided (usually from admin/RM creation)
         if (dto.rm_id) {
-            const regionalManager = await this.usersRepository.findOne({
-                where: {
-                    role: 'regional_manager',
-                    rmUniqueId: dto.rm_id,
-                },
+            const regionalManager = await this.prisma.user.findUnique({
+                where: { rmUniqueId: dto.rm_id },
             });
 
-            if (!regionalManager) {
+            if (!regionalManager || regionalManager.role !== 'regional_manager') {
                 throw new BadRequestException('Invalid Regional Manager ID.');
             }
             regionalManagerId = regionalManager.id;
         } 
         // Else if referral_code is provided (user registration)
         else if (referralCode) {
-            const regionalManager = await this.usersRepository.findOne({
-                where: {
-                    role: 'regional_manager',
-                    rmUniqueId: referralCode,
-                },
+            const regionalManager = await this.prisma.user.findUnique({
+                where: { rmUniqueId: referralCode },
             });
 
-            if (regionalManager) {
+            if (regionalManager?.role === 'regional_manager') {
                 regionalManagerId = regionalManager.id;
             }
         }
 
         if (regionalManagerId) {
-            const assignedUserCount = await this.usersRepository.count({
+            const assignedUserCount = await this.prisma.user.count({
                 where: {
                     rmId: regionalManagerId,
                     role: 'user',
@@ -165,18 +158,17 @@ export class AuthService {
         }
 
         const password = await hash(dto.password, 10);
-        const user = this.usersRepository.create({
-            name: dto.name,
-            email,
-            mobileNumber: dto.mobile_number,
-            password,
-            referralCode,
-            role: dto.role || 'user',
-            rmId: regionalManagerId,
+        const user = await this.prisma.user.create({
+            data: {
+                name: dto.name,
+                email,
+                mobileNumber: dto.mobile_number,
+                password,
+                referralCode,
+                role: dto.role || 'user',
+                rmId: regionalManagerId,
+            }
         });
-
-
-        await this.usersRepository.save(user);
         const token = await this.issueJwtForUser(user);
 
         // Send welcome email
@@ -194,13 +186,13 @@ export class AuthService {
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
 
-        await this.otpRepository.save(
-            this.otpRepository.create({
+        await this.prisma.otpVerification.create({
+            data: {
                 identifier: normalizedIdentifier,
                 otp,
                 expiresAt,
-            }),
-        );
+            }
+        });
 
         if (normalizedIdentifier.includes('@')) {
             await this.notificationService.sendRegisterOtpNotification(
@@ -224,17 +216,19 @@ export class AuthService {
 
     async verifyOtp(identifier: string, otp: string) {
         const normalizedIdentifier = normalizeIdentifier(identifier);
-        const record = await this.otpRepository.findOne({
+        const record = await this.prisma.otpVerification.findFirst({
             where: { identifier: normalizedIdentifier, otp, verified: false },
-            order: { createdAt: 'DESC' },
+            orderBy: { createdAt: 'desc' },
         });
 
         if (!record || record.expiresAt < new Date()) {
             throw new BadRequestException('Invalid or expired OTP');
         }
 
-        record.verified = true;
-        await this.otpRepository.save(record);
+        await this.prisma.otpVerification.update({
+            where: { id: record.id },
+            data: { verified: true }
+        });
 
         return { success: true };
     }
@@ -243,7 +237,7 @@ export class AuthService {
         const normalizedEmail = email.trim().toLowerCase();
         
         try {
-            const user = await this.usersRepository.findOne({
+            const user = await this.prisma.user.findUnique({
                 where: { email: normalizedEmail },
             });
 
@@ -262,13 +256,13 @@ export class AuthService {
                 
             const resetUrl = `${frontendUrl}/reset-password/${resetToken}?email=${encodeURIComponent(normalizedEmail)}`;
 
-            await this.otpRepository.save(
-                this.otpRepository.create({
+            await this.prisma.otpVerification.create({
+                data: {
                     identifier: `reset:${normalizedEmail}`,
                     otp: resetToken,
                     expiresAt,
-                }),
-            );
+                }
+            });
 
             await this.notificationService.sendEmail(
                 normalizedEmail,
@@ -277,6 +271,7 @@ export class AuthService {
                 {
                     reset_url: resetUrl,
                     token: resetToken,
+                    userName: user.name,
                 },
             );
 
@@ -292,14 +287,14 @@ export class AuthService {
 
     async resetPassword(email: string, token: string, password: string) {
         const normalizedEmail = email.trim().toLowerCase();
-        const record = await this.otpRepository.findOne({
+        const record = await this.prisma.otpVerification.findFirst({
             where: {
                 identifier: `reset:${normalizedEmail}`,
                 otp: token,
                 verified: false,
             },
-            order: {
-                createdAt: 'DESC',
+            orderBy: {
+                createdAt: 'desc',
             },
         });
 
@@ -307,13 +302,24 @@ export class AuthService {
             throw new BadRequestException('Invalid or expired reset token');
         }
 
-        const user = await this.usersRepository.findOneOrFail({
+        const user = await this.prisma.user.findUnique({
             where: { email: normalizedEmail },
         });
-        user.password = await hash(password, 10);
-        await this.usersRepository.save(user);
-        record.verified = true;
-        await this.otpRepository.save(record);
+
+        if (!user) {
+            throw new NotFoundException('User not found');
+        }
+
+        const hashedPassword = await hash(password, 10);
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: { password: hashedPassword }
+        });
+
+        await this.prisma.otpVerification.update({
+            where: { id: record.id },
+            data: { verified: true }
+        });
 
         return { message: 'Password reset successfully' };
     }
@@ -331,13 +337,13 @@ export class AuthService {
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-        await this.otpRepository.save(
-            this.otpRepository.create({
+        await this.prisma.otpVerification.create({
+            data: {
                 identifier: normalizedMobile,
                 otp,
                 expiresAt,
-            }),
-        );
+            }
+        });
 
         const formattedPhone = formatPhoneNumber(mobileNumber);
         this.notificationService.sendSms(
@@ -373,7 +379,7 @@ export class AuthService {
         return null;
     }
 
-    private async issueJwtForUser(user: UserEntity) {
+    private async issueJwtForUser(user: { email: string, role: string, id: number }) {
         const payload: JwtPayload = {
             email: user.email,
             role: user.role,
@@ -386,25 +392,17 @@ export class AuthService {
     private async findUserByMobile(mobileNumber: string) {
         const normalizedMobile = normalizeMobileIdentifier(mobileNumber);
 
-        return this.usersRepository
-            .findOne({
-                where: [{ mobileNumber }, { mobileNumber: normalizedMobile }],
-            })
-            .then(async (user) => {
-                if (user) {
-                    return user;
-                }
-
-                return this.usersRepository
-                    .createQueryBuilder('user')
-                    .where(
-                        'REPLACE(REPLACE(user.mobile_number, "+", ""), " ", "") LIKE :mobile',
-                        {
-                            mobile: `%${normalizedMobile}`,
-                        },
-                    )
-                    .getOne();
-            });
+        return this.prisma.user.findFirst({
+            where: {
+                OR: [
+                    { mobileNumber: mobileNumber },
+                    { mobileNumber: normalizedMobile },
+                    // Simplified: Prisma doesn't have a direct REPLACE/LIKE in a single where clause without raw SQL
+                    // But we can use contains for a partial match if needed.
+                    { mobileNumber: { contains: normalizedMobile } }
+                ]
+            }
+        });
     }
 
     private devOnlyPayload<T extends Record<string, unknown>>(data: T) {

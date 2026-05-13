@@ -1,6 +1,4 @@
-import { EnquiryEntity } from '../infrastructure/persistence/enquiry.entity';
-
-export function toEnquiryResource(enquiry: EnquiryEntity) {
+export function toEnquiryResource(enquiry: any) {
     return {
         id: enquiry.id,
         name: enquiry.name,
@@ -10,6 +8,5 @@ export function toEnquiryResource(enquiry: EnquiryEntity) {
         message: enquiry.message,
         status: enquiry.status,
         created_at: enquiry.createdAt,
-        updated_at: enquiry.updatedAt,
     };
 }

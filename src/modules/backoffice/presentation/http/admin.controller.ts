@@ -203,8 +203,8 @@ export class AdminController {
 
     @Post('service-applications/:id/assign')
     async assignAccountantToService(
-        @Param('id') id: number,
-        @Body('accountant_id') accountantId: number,
+        @Param('id', ParseIntPipe) id: number,
+        @Body('accountant_id', ParseIntPipe) accountantId: number,
     ) {
         const result = await this.adminService.assignAccountantToService(
             id,

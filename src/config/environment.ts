@@ -3,6 +3,7 @@ import { registerAs } from '@nestjs/config';
 export type AppEnvironment = {
     apiPrefix: string;
     appName: string;
+    appUrl: string;
     frontendUrl: string;
     nodeEnv: string;
     port: number;
@@ -27,6 +28,7 @@ export const appEnvironment = registerAs(
     (): AppEnvironment => ({
         apiPrefix: process.env.API_PREFIX as string,
         appName: process.env.APP_NAME as string,
+        appUrl: process.env.APP_URL as string,
         frontendUrl: process.env.FRONTEND_URL as string,
         nodeEnv: process.env.NODE_ENV as string,
         port: Number(process.env.PORT || 4000),

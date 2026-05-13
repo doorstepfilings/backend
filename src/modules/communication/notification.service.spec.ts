@@ -84,9 +84,10 @@ describe('NotificationService', () => {
             expect(mockMailerService.sendMail).toHaveBeenCalledWith({
                 to: 'test@example.com',
                 subject: 'Subject',
-                template: './template',
+                template: 'template',
                 context: { 
                     key: 'value',
+                    subject: 'Subject',
                     dashboardUrl: 'http://localhost:3000/dashboard',
                     year: new Date().getFullYear(),
                 },

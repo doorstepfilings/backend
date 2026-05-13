@@ -32,6 +32,13 @@ class EnvironmentVariables {
         require_tld: false,
         require_protocol: true,
     })
+    @IsOptional()
+    APP_URL?: string;
+
+    @IsUrl({
+        require_tld: false,
+        require_protocol: true,
+    })
     FRONTEND_URL!: string;
 
     @IsString()
@@ -54,6 +61,38 @@ class EnvironmentVariables {
     @IsString()
     @IsOptional()
     DB_PASSWORD!: string;
+
+    @IsNumber()
+    @Min(1)
+    @Max(1000)
+    @IsOptional()
+    DB_CONNECTION_LIMIT?: number;
+
+    @IsString()
+    @IsOptional()
+    LEGACY_DB_HOST?: string;
+
+    @IsNumber()
+    @Min(1)
+    @Max(65535)
+    @IsOptional()
+    LEGACY_DB_PORT?: number;
+
+    @IsString()
+    @IsOptional()
+    LEGACY_DB_DATABASE?: string;
+
+    @IsString()
+    @IsOptional()
+    LEGACY_DB_USERNAME?: string;
+
+    @IsString()
+    @IsOptional()
+    LEGACY_DB_PASSWORD?: string;
+
+    @IsString()
+    @IsOptional()
+    LEGACY_STORAGE_ROOTS?: string;
 
     @IsString()
     @IsNotEmpty()

@@ -1,41 +1,10 @@
 import { toServiceResource } from '../../catalog/application/catalog.mapper';
-import { ServiceCategoryEntity } from '../../catalog/infrastructure/persistence/service-category.entity';
-import { ServiceEntity } from '../../catalog/infrastructure/persistence/service.entity';
 
 type LoosePayload = Record<string, unknown>;
 
-export type NormalizedAdminCategoryInput = Partial<
-    Pick<ServiceCategoryEntity, 'description' | 'icon' | 'isActive' | 'name' | 'sortOrder'>
->;
+export type NormalizedAdminCategoryInput = any;
 
-export type NormalizedAdminServiceInput = Partial<
-    Pick<
-        ServiceEntity,
-        | 'adminNotes'
-        | 'description'
-        | 'extraDocuments'
-        | 'faqs'
-        | 'features'
-        | 'gstPercentage'
-        | 'isActive'
-        | 'isFeatured'
-        | 'isPopular'
-        | 'link'
-        | 'longDescription'
-        | 'metadata'
-        | 'name'
-        | 'price'
-        | 'pricingPlans'
-        | 'process'
-        | 'processingDays'
-        | 'requiredDocumentsList'
-        | 'requirements'
-        | 'serviceCategoryId'
-        | 'serviceCode'
-        | 'serviceType'
-        | 'shortDescription'
-    >
->;
+export type NormalizedAdminServiceInput = any;
 
 function asRecord(input: unknown): LoosePayload {
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -131,7 +100,7 @@ export function normalizeAdminCategoryInput(
     input: unknown,
 ): NormalizedAdminCategoryInput {
     const payload = asRecord(input);
-    const normalized: NormalizedAdminCategoryInput = {};
+    const normalized: any = {};
 
     const name = toNullableString(pickValue(payload, 'name', 'category'));
     if (name !== undefined && name !== null) {
@@ -165,7 +134,7 @@ export function normalizeAdminServiceInput(
     input: unknown,
 ): NormalizedAdminServiceInput {
     const payload = asRecord(input);
-    const normalized: NormalizedAdminServiceInput = {};
+    const normalized: any = {};
 
     const serviceCategoryId = toNumber(
         pickValue(payload, 'serviceCategoryId', 'service_category_id'),
@@ -227,7 +196,7 @@ export function normalizeAdminServiceInput(
         pickValue(payload, 'pricingPlans', 'pricing_plans'),
     );
     if (pricingPlans !== undefined) {
-        normalized.pricingPlans = pricingPlans as ServiceEntity['pricingPlans'];
+        normalized.pricingPlans = pricingPlans;
     }
 
     const gstPercentage = toNullableString(
@@ -277,28 +246,26 @@ export function normalizeAdminServiceInput(
 
     const metadata = toJsonLike(pickValue(payload, 'metadata'));
     if (metadata !== undefined) {
-        normalized.metadata = metadata as ServiceEntity['metadata'];
+        normalized.metadata = metadata;
     }
 
     const faqs = toJsonLike(pickValue(payload, 'faqs'));
     if (faqs !== undefined) {
-        normalized.faqs = faqs as ServiceEntity['faqs'];
+        normalized.faqs = faqs;
     }
 
     const requiredDocumentsList = toJsonLike(
         pickValue(payload, 'requiredDocumentsList', 'required_documents_list'),
     );
     if (requiredDocumentsList !== undefined) {
-        normalized.requiredDocumentsList =
-            requiredDocumentsList as ServiceEntity['requiredDocumentsList'];
+        normalized.requiredDocumentsList = requiredDocumentsList;
     }
 
     const extraDocuments = toJsonLike(
         pickValue(payload, 'extraDocuments', 'extra_documents'),
     );
     if (extraDocuments !== undefined) {
-        normalized.extraDocuments =
-            extraDocuments as ServiceEntity['extraDocuments'];
+        normalized.extraDocuments = extraDocuments;
     }
 
     const adminNotes = toNullableString(
@@ -311,10 +278,9 @@ export function normalizeAdminServiceInput(
     return normalized;
 }
 
-export function toAdminCategoryResource(category: ServiceCategoryEntity) {
+export function toAdminCategoryResource(category: any) {
     const servicesCount = Number(
-        (category as ServiceCategoryEntity & { services_count?: number })
-            .services_count ??
+        (category as any).services_count ??
             (Array.isArray(category.services) ? category.services.length : 0),
     );
 
@@ -333,7 +299,7 @@ export function toAdminCategoryResource(category: ServiceCategoryEntity) {
     };
 }
 
-export function toAdminServiceResource(service: ServiceEntity) {
+export function toAdminServiceResource(service: any) {
     const base = toServiceResource(service);
 
     return {

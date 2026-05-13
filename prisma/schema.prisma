@@ -1,13 +1,272 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// DoorstepFilings Prisma schema.
+// Prisma owns the fresh NestJS MySQL database schema.
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "mysql"
 }
+
+model User {
+  id                  Int       @id @default(autoincrement())
+  name                String    @db.VarChar(255)
+  email               String    @unique @db.VarChar(191)
+  password            String    @db.VarChar(255)
+  role                String    @default("user") @db.VarChar(50)
+  mobileNumber        String?   @map("mobile_number") @db.VarChar(50)
+  isMobileVerified    Boolean   @default(false) @map("is_mobile_verified")
+  referralCode        String?   @map("referral_code") @db.VarChar(255)
+  rmUniqueId          String?   @unique(map: "users_rm_unique_id_key") @map("rm_unique_id") @db.VarChar(191)
+  accountantUniqueId  String?   @unique(map: "users_accountant_unique_id_key") @map("accountant_unique_id") @db.VarChar(191)
+  rmId                Int?      @map("rm_id")
+  accountantId        Int?      @map("accountant_id")
+  address             String?   @db.VarChar(255)
+  city                String?   @db.VarChar(255)
+  state               String?   @db.VarChar(255)
+  pincode             String?   @db.VarChar(255)
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  // Relationships
+  regionalManager     User?     @relation("RMToUser", fields: [rmId], references: [id])
+  assignedUsers       User[]    @relation("RMToUser")
+  accountant          User?     @relation("AccountantToUser", fields: [accountantId], references: [id])
+  assignedAccountants User[]    @relation("AccountantToUser")
+  userServices        UserService[]
+  assignedUserServices UserService[] @relation("AccountantToService")
+  payments            Payment[]
+  uploadedDocuments   ServiceRequestDocument[]
+
+  @@index([role, createdAt], map: "users_role_created_at_idx")
+  @@index([mobileNumber], map: "users_mobile_number_idx")
+  @@index([rmId, role], map: "users_rm_id_role_idx")
+  @@index([accountantId, role], map: "users_accountant_id_role_idx")
+  @@map("users")
+}
+
+model OtpVerification {
+  id         Int      @id @default(autoincrement())
+  identifier String   @db.VarChar(191)
+  otp        String   @db.VarChar(10)
+  expiresAt  DateTime @map("expires_at")
+  verified   Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([identifier, verified, createdAt], map: "otp_identifier_verified_created_at_idx")
+  @@index([identifier, otp, verified, createdAt], map: "otp_identifier_otp_verified_created_at_idx")
+  @@map("otp_verifications")
+}
+
+model ServiceCategory {
+  id          Int       @id @default(autoincrement())
+  name        String    @db.VarChar(191)
+  slug        String    @unique @db.VarChar(191)
+  description String?   @db.Text
+  icon        String?   @db.VarChar(255)
+  isActive    Boolean   @default(true) @map("is_active")
+  sortOrder   Int       @default(0) @map("sort_order")
+  services    Service[]
+
+  @@index([sortOrder, name], map: "service_categories_sort_order_name_idx")
+  @@map("service_categories")
+}
+
+model Service {
+  id                   Int               @id @default(autoincrement())
+  serviceCategoryId    Int               @map("service_category_id")
+  name                 String            @db.VarChar(191)
+  shortDescription     String?           @map("short_description") @db.Text
+  slug                 String            @unique(map: "services_slug_key") @db.VarChar(191)
+  link                 String?           @db.VarChar(255)
+  description          String?           @db.Text
+  longDescription      String?           @map("long_description") @db.LongText
+  features             String?           @db.Text
+  requirements         String?           @db.Text
+  process              String?           @db.Text
+  price                Decimal?          @db.Decimal(10, 2)
+  pricingPlans         Json?             @map("pricing_plans")
+  gstPercentage        Decimal           @default(18.00) @map("gst_percentage") @db.Decimal(5, 2)
+  serviceCode          String?           @map("service_code") @db.VarChar(255)
+  serviceType          String            @default("standard") @map("service_type") @db.VarChar(255)
+  processingDays       Int               @default(7) @map("processing_days")
+  isActive             Boolean           @default(true) @map("is_active")
+  isPopular            Boolean           @default(false) @map("is_popular")
+  isFeatured           Boolean           @default(false) @map("is_featured")
+  metadata             Json?
+  faqs                 Json?
+  requiredDocumentsList Json?            @map("required_documents_list")
+  extraDocuments       Json?             @map("extra_documents")
+  adminNotes           String?           @map("admin_notes") @db.Text
+
+  category             ServiceCategory   @relation(fields: [serviceCategoryId], references: [id])
+  documents            ServiceDocument[]
+  userServices         UserService[]
+
+  @@index([serviceCategoryId, name], map: "services_category_name_idx")
+  @@map("services")
+}
+
+model ServiceDocument {
+  id           Int      @id @default(autoincrement())
+  serviceId    Int      @map("service_id")
+  documentName String?  @map("document_name") @db.VarChar(255)
+  name         String?  @db.VarChar(255)
+  slug         String?  @db.VarChar(191)
+  description  String?  @db.Text
+  documentType String   @default("required") @map("document_type") @db.VarChar(255)
+  fileType     String   @default("pdf") @map("file_type") @db.VarChar(255)
+  maxSize      Int      @default(5) @map("max_size")
+  isRequired   Boolean  @default(true) @map("is_required")
+  sortOrder    Int      @default(0) @map("sort_order")
+  metadata     Json?
+
+  service      Service  @relation(fields: [serviceId], references: [id])
+
+  @@index([serviceId, sortOrder], map: "service_documents_service_sort_order_idx")
+  @@map("service_documents")
+}
+
+model Enquiry {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(255)
+  email     String   @db.VarChar(255)
+  phone     String?  @db.VarChar(255)
+  service   String?  @db.VarChar(255)
+  message   String   @db.Text
+  status    String   @default("pending") @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([createdAt], map: "enquiries_created_at_idx")
+  @@index([status, createdAt], map: "enquiries_status_created_at_idx")
+  @@map("enquiries")
+}
+
+model UserService {
+  id                  Int       @id @default(autoincrement())
+  userId              Int       @map("user_id")
+  serviceId           Int       @map("service_id")
+  accountantId        Int?      @map("accountant_id")
+  applicationUniqueId String?   @unique @map("application_unique_id") @db.VarChar(191)
+  status              String    @default("draft") @db.VarChar(50)
+  paymentStatus       String    @default("pending") @map("payment_status") @db.VarChar(50)
+  formData            Json?     @map("form_data")
+  documents           Json?
+  amount              Decimal?  @db.Decimal(10, 2)
+  notes               String?   @db.Text
+  revisionNotes       String?   @map("revision_notes") @db.Text
+  caNotes             String?   @map("ca_notes") @db.Text
+  updateNote          String?   @map("update_note") @db.Text
+  rejectionReason     String?   @map("rejection_reason") @db.Text
+  verified            Boolean   @default(false)
+  certificateUrl      String?   @map("certificate_url") @db.VarChar(255)
+  submittedToCaAt     DateTime? @map("submitted_to_ca_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  user                User      @relation(fields: [userId], references: [id])
+  accountant          User?     @relation("AccountantToService", fields: [accountantId], references: [id])
+  service             Service   @relation(fields: [serviceId], references: [id])
+  requestDocuments    ServiceRequestDocument[]
+  payments            Payment[]
+
+  @@index([status], map: "user_services_status_idx")
+  @@index([paymentStatus], map: "user_services_payment_status_idx")
+  @@index([createdAt], map: "user_services_created_at_idx")
+  @@index([userId, status], map: "user_services_user_status_idx")
+  @@index([userId, serviceId, status], map: "user_services_user_service_status_idx")
+  @@index([userId, paymentStatus], map: "user_services_user_payment_status_idx")
+  @@index([serviceId, status], map: "user_services_service_status_idx")
+  @@index([accountantId, status], map: "user_services_accountant_status_idx")
+  @@index([accountantId, updatedAt], map: "user_services_accountant_updated_at_idx")
+  @@map("user_services")
+}
+
+model ServiceRequestDocument {
+  id                Int      @id @default(autoincrement())
+  userServiceId     Int      @map("user_service_id")
+  serviceDocumentId Int?     @map("service_document_id")
+  uploadedById      Int      @map("uploaded_by")
+  sourceDocumentId  Int?     @map("source_document_id")
+  documentName      String?  @map("document_name") @db.VarChar(191)
+  documentType      String?  @map("document_type") @db.VarChar(255)
+  documentCategory  String?  @map("document_category") @db.VarChar(255)
+  fileName          String   @map("file_name") @db.VarChar(255)
+  filePath          String   @map("file_path") @db.VarChar(255)
+  fileExtension     String?  @map("file_extension") @db.VarChar(50)
+  fileSize          BigInt?  @map("file_size")
+  mimeType          String?  @map("mime_type") @db.VarChar(100)
+  version           Int      @default(1)
+  status            String   @default("pending") @db.VarChar(50)
+  notes             String?  @db.Text
+  isFinal           Boolean  @default(false) @map("is_final")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  userService       UserService @relation(fields: [userServiceId], references: [id], onDelete: Cascade)
+  uploadedBy        User        @relation(fields: [uploadedById], references: [id])
+
+  @@index([sourceDocumentId], map: "srd_source_document_idx")
+  @@index([userServiceId, createdAt], map: "srd_user_service_created_at_idx")
+  @@index([uploadedById, createdAt], map: "srd_uploaded_by_created_at_idx")
+  @@index([userServiceId, serviceDocumentId], map: "srd_user_service_service_document_idx")
+  @@index([userServiceId, documentName, version], map: "srd_user_service_doc_name_version_idx")
+  @@map("service_request_documents")
+}
+
+model Payment {
+  id                          Int      @id @default(autoincrement())
+  userId                      Int      @map("user_id")
+  userServiceId               Int?     @map("user_service_id")
+  paymentProviderOrderId      String?  @map("payment_provider_order_id") @db.VarChar(191)
+  paymentProviderTransactionId String? @map("payment_provider_transaction_id") @db.VarChar(191)
+  paymentProvider             String   @default("razorpay") @map("payment_provider") @db.VarChar(255)
+  paymentProviderStatus       String?  @map("payment_provider_status") @db.VarChar(255)
+  amount                      Decimal  @db.Decimal(10, 2)
+  currency                    String   @default("INR") @db.VarChar(10)
+  status                      String   @default("pending") @db.VarChar(50)
+  paymentStatus               String   @default("pending") @map("payment_status") @db.VarChar(50)
+  paymentMethod               String?  @map("payment_method") @db.VarChar(50)
+  orderUniqueId               String?  @unique @map("order_unique_id") @db.VarChar(191)
+  invoiceUniqueId             String?  @unique @map("invoice_unique_id") @db.VarChar(191)
+  notes                       Json?
+  refundId                    String?  @map("refund_id") @db.VarChar(255)
+  refundAmount                Decimal? @map("refund_amount") @db.Decimal(10, 2)
+  refundReason                String?  @map("refund_reason") @db.Text
+  refundStatus                String?  @map("refund_status") @db.VarChar(50)
+  createdAt                   DateTime @default(now()) @map("created_at")
+  updatedAt                   DateTime @updatedAt @map("updated_at")
+
+  user                        User        @relation(fields: [userId], references: [id])
+  userService                 UserService? @relation(fields: [userServiceId], references: [id])
+
+  @@index([paymentProviderOrderId], map: "payments_provider_order_idx")
+  @@index([paymentProviderTransactionId], map: "payments_provider_txn_idx")
+  @@index([userId, createdAt], map: "payments_user_created_at_idx")
+  @@index([userId, status, createdAt], map: "payments_user_status_created_at_idx")
+  @@index([userServiceId, status], map: "payments_user_service_status_idx")
+  @@index([status, createdAt], map: "payments_status_created_at_idx")
+  @@map("payments")
+}
+
+model MediaAsset {
+  id           Int      @id @default(autoincrement())
+  filename     String   @db.VarChar(255)
+  originalName String   @map("original_name") @db.VarChar(255)
+  mimeType     String   @map("mime_type") @db.VarChar(100)
+  fileSize     BigInt   @map("file_size")
+  extension    String?  @db.VarChar(20)
+  filePath     String   @unique @map("file_path") @db.VarChar(191)
+  url          String   @db.VarChar(255)
+  folder       String   @default("general") @db.VarChar(100)
+  uploadedById Int?     @map("uploaded_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([folder, createdAt], map: "media_assets_folder_created_at_idx")
+  @@index([uploadedById, createdAt], map: "media_assets_uploaded_by_created_at_idx")
+  @@map("media_assets")
+}
+

@@ -1,36 +1,17 @@
 import { CartService } from './cart.service';
-import { Repository } from 'typeorm';
-import { ServiceEntity } from '../../catalog/infrastructure/persistence/service.entity';
-import { EnquiryEntity } from '../../customer/infrastructure/persistence/enquiry.entity';
-import { UserEntity } from '../../identity/infrastructure/persistence/user.entity';
-import { UserServiceEntity } from '../infrastructure/persistence/user-service.entity';
 
 describe('CartService', () => {
     let service: CartService;
-    let userServiceRepo: {
-        delete: jest.Mock;
-        findOne: jest.Mock;
-        findOneOrFail: jest.Mock;
-    };
-    let servicesRepo: Record<string, never>;
-    let usersRepo: Record<string, never>;
-    let enquiriesRepo: Record<string, never>;
+    let prismaMock: any;
 
     beforeEach(() => {
-        userServiceRepo = {
-            delete: jest.fn(),
-            findOne: jest.fn(),
-            findOneOrFail: jest.fn(),
+        prismaMock = {
+            userService: {
+                findFirst: jest.fn(),
+                delete: jest.fn(),
+            },
         };
-        servicesRepo = {};
-        usersRepo = {};
-        enquiriesRepo = {};
-        service = new CartService(
-            userServiceRepo as unknown as Repository<UserServiceEntity>,
-            servicesRepo as unknown as Repository<ServiceEntity>,
-            usersRepo as unknown as Repository<UserEntity>,
-            enquiriesRepo as unknown as Repository<EnquiryEntity>,
-        );
+        service = new CartService(prismaMock as any);
     });
 
     it('should be defined', () => {
@@ -42,16 +23,18 @@ describe('CartService', () => {
             const userId = 1;
             const itemId = 100;
 
-            userServiceRepo.findOne.mockResolvedValue({
+            prismaMock.userService.findFirst.mockResolvedValue({
                 id: itemId,
                 userId,
                 status: 'in_cart',
             });
 
-            userServiceRepo.delete.mockResolvedValue({});
+            prismaMock.userService.delete.mockResolvedValue({});
 
             await service.removeFromCart(userId, itemId);
-            expect(userServiceRepo.delete).toHaveBeenCalledWith({ id: itemId });
+            expect(prismaMock.userService.delete).toHaveBeenCalledWith({
+                where: { id: itemId }
+            });
         });
     });
 });

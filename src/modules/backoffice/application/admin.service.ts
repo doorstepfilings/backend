@@ -3,15 +3,10 @@ import {
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, Not, QueryFailedError, Repository } from 'typeorm';
+import { PrismaService } from '../../../shared/services/prisma.service';
 import { hash } from 'bcryptjs';
-import { UserEntity } from '../../identity/infrastructure/persistence/user.entity';
-import { ServiceEntity } from '../../catalog/infrastructure/persistence/service.entity';
-import { ServiceCategoryEntity } from '../../catalog/infrastructure/persistence/service-category.entity';
-import { EnquiryEntity } from '../../customer/infrastructure/persistence/enquiry.entity';
 import { UserServicesService } from '../../operations/application/user-services.service';
-import { UserServiceEntity } from '../../operations/infrastructure/persistence/user-service.entity';
+import { REVIEW_QUEUE_APPLICATION_STATUSES } from '../../operations/application/user-service-status';
 import { UniqueIDGenerator } from '../../../shared/utils/unique-id.generator';
 import { NotificationService } from '../../communication/notification.service';
 import type { UpdateApplicationStatusInput } from '../../operations/application/user-services.service';
@@ -24,24 +19,9 @@ import {
     toAdminServiceResource,
 } from './admin.mapper';
 
-export type AdminCategoryInput = Pick<ServiceCategoryEntity, 'name' | 'icon'> &
-    Partial<Omit<ServiceCategoryEntity, 'id' | 'name' | 'services' | 'slug'>>;
+export type AdminCategoryInput = any;
 
-export type AdminServiceInput = Pick<
-    ServiceEntity,
-    'name' | 'serviceCategoryId'
-> &
-    Partial<
-        Omit<
-            ServiceEntity,
-            | 'category'
-            | 'documents'
-            | 'id'
-            | 'name'
-            | 'serviceCategoryId'
-            | 'slug'
-        >
-    >;
+export type AdminServiceInput = any;
 
 export type CreateUserInput = {
     name: string;
@@ -67,65 +47,67 @@ export class AdminService {
     ];
 
     constructor(
-        @InjectRepository(UserEntity)
-        private readonly usersRepository: Repository<UserEntity>,
-        @InjectRepository(ServiceEntity)
-        private readonly servicesRepository: Repository<ServiceEntity>,
-        @InjectRepository(ServiceCategoryEntity)
-        private readonly categoriesRepository: Repository<ServiceCategoryEntity>,
-        @InjectRepository(EnquiryEntity)
-        private readonly enquiriesRepository: Repository<EnquiryEntity>,
-        @InjectRepository(UserServiceEntity)
-        private readonly userServicesRepository: Repository<UserServiceEntity>,
+        private readonly prisma: PrismaService,
         private readonly userServicesService: UserServicesService,
         private readonly notificationService: NotificationService,
     ) {}
 
+    private normalizeInteger(value: number | string, fieldName: string) {
+        const parsed =
+            typeof value === 'number' ? value : Number(String(value).trim());
+
+        if (!Number.isInteger(parsed)) {
+            throw new BadRequestException(`${fieldName} must be a valid integer`);
+        }
+
+        return parsed;
+    }
+
     // ─── User Management ──────────────────────────────────────────────────────
 
     async getUsers(role?: string) {
-        return this.usersRepository.find({
+        return (await this.prisma.user.findMany({
             where: role ? { role } : {},
-            relations: { regionalManager: true, accountant: true },
-            order: { createdAt: 'DESC' },
-        });
+            include: { regionalManager: true, accountant: true },
+            orderBy: { createdAt: 'desc' },
+        })) as any[];
     }
 
     async getRMs() {
-        const rms = await this.usersRepository
-            .createQueryBuilder('user')
-            .leftJoinAndSelect('user.assignedUsers', 'assignedUser')
-            .where('user.role = :role', { role: 'regional_manager' })
-            .loadRelationCountAndMap(
-                'user.assigned_users_count',
-                'user.assignedUsers',
-                'u',
-                (qb) => qb.where('u.role = :uRole', { uRole: 'user' }),
-            )
-            .getMany();
+        const rms = await this.prisma.user.findMany({
+            where: { role: 'regional_manager' },
+            include: {
+                _count: {
+                    select: { assignedUsers: true }
+                }
+            }
+        });
 
-        return rms;
+        return rms.map(rm => ({
+            ...rm,
+            assigned_users_count: rm._count.assignedUsers
+        }));
     }
 
     async getAccountants() {
-        const accountants = await this.usersRepository
-            .createQueryBuilder('user')
-            .leftJoinAndSelect('user.assignedAccountantUsers', 'assignedUser')
-            .where('user.role = :role', { role: 'accountant' })
-            .loadRelationCountAndMap(
-                'user.assigned_users_count',
-                'user.assignedAccountantUsers',
-                'u',
-                (qb) => qb.where('u.role = :uRole', { uRole: 'user' }),
-            )
-            .getMany();
+        const accountants = await this.prisma.user.findMany({
+            where: { role: 'accountant' },
+            include: {
+                _count: {
+                    select: { assignedAccountants: true }
+                }
+            }
+        });
 
-        return accountants;
+        return accountants.map(acc => ({
+            ...acc,
+            assigned_users_count: acc._count.assignedAccountants
+        }));
     }
 
     async storeUser(data: CreateUserInput) {
         const email = data.email.trim().toLowerCase();
-        const existing = await this.usersRepository.findOne({
+        const existing = await this.prisma.user.findUnique({
             where: { email },
         });
 
@@ -135,37 +117,37 @@ export class AdminService {
 
         const hashedPassword = await hash(data.password || 'password123', 10);
 
-        const user = this.usersRepository.create({
+        const userData: any = {
             name: data.name,
             email,
             password: hashedPassword,
             role: data.role,
             mobileNumber: data.mobile_number,
             rmId: data.rm_id || null,
-        });
+        };
 
         if (data.role === 'regional_manager') {
-            user.rmUniqueId =
+            userData.rmUniqueId =
                 UniqueIDGenerator.generateUserUniqueID('regional_manager');
         } else if (data.role === 'accountant') {
-            user.accountantUniqueId =
+            userData.accountantUniqueId =
                 UniqueIDGenerator.generateUserUniqueID('accountant');
         }
 
-        const saved = await this.usersRepository.save(user);
+        const saved = await this.prisma.user.create({ data: userData });
 
         // Send welcome email
-        await this.notificationService.sendWelcomeNotification(saved);
+        await this.notificationService.sendWelcomeNotification(saved as any);
 
 
         return saved;
     }
 
     async deleteUser(id: number) {
-        const user = await this.usersRepository.findOneOrFail({
+        const user = (await this.prisma.user.findUniqueOrThrow({
             where: { id },
-            relations: { assignedUsers: true, assignedAccountantUsers: true },
-        });
+            include: { assignedUsers: true, assignedAccountants: true },
+        })) as any;
 
         if (user.role === 'super_admin') {
             throw new BadRequestException('Cannot delete Super Admin');
@@ -179,18 +161,24 @@ export class AdminService {
 
         if (
             user.role === 'accountant' &&
-            user.assignedAccountantUsers.length > 0
+            user.assignedAccountants.length > 0
         ) {
             throw new BadRequestException(
                 'Cannot delete Accountant with assigned users. Please reassign first.',
             );
         }
 
-        await this.usersRepository.delete(id);
+        await this.prisma.user.delete({ where: { id } });
     }
 
     async assignRM(userId: number, rmId: number | null) {
-        const user = await this.usersRepository.findOneOrFail({
+        userId = this.normalizeInteger(userId, 'user_id');
+        rmId =
+            rmId === null || rmId === undefined || rmId === ('' as any)
+                ? null
+                : this.normalizeInteger(rmId, 'rm_id');
+
+        const user = await this.prisma.user.findUniqueOrThrow({
             where: { id: userId },
         });
         if (user.role !== 'user') {
@@ -198,25 +186,37 @@ export class AdminService {
         }
 
         if (rmId) {
-            await this.usersRepository.findOneOrFail({
+            await this.prisma.user.findFirstOrThrow({
                 where: { id: rmId, role: 'regional_manager' },
             });
-            const count = await this.usersRepository.count({
+            const count = await this.prisma.user.count({
                 where: { rmId, role: 'user' },
             });
             if (count >= 20 && user.rmId !== rmId) {
                 throw new BadRequestException('RM limit reached (max 20)');
             }
-            user.rmId = rmId;
+            return this.prisma.user.update({
+                where: { id: userId },
+                data: { rmId }
+            });
         } else {
-            user.rmId = null;
+            return this.prisma.user.update({
+                where: { id: userId },
+                data: { rmId: null }
+            });
         }
-
-        return this.usersRepository.save(user);
     }
 
     async assignAccountant(userId: number, accountantId: number | null) {
-        const user = await this.usersRepository.findOneOrFail({
+        userId = this.normalizeInteger(userId, 'user_id');
+        accountantId =
+            accountantId === null ||
+            accountantId === undefined ||
+            accountantId === ('' as any)
+                ? null
+                : this.normalizeInteger(accountantId, 'accountant_id');
+
+        const user = await this.prisma.user.findUniqueOrThrow({
             where: { id: userId },
         });
         if (user.role !== 'user') {
@@ -226,72 +226,87 @@ export class AdminService {
         }
 
         if (accountantId) {
-            const accountant = await this.usersRepository.findOneOrFail({
+            const accountant = (await this.prisma.user.findFirstOrThrow({
                 where: { id: accountantId, role: 'accountant' },
-            });
-            user.accountantId = accountantId;
+            })) as any;
 
             // Sync active services with the new accountant
-            await this.userServicesRepository.update(
-                {
+            await this.prisma.userService.updateMany({
+                where: {
                     userId,
-                    status: Not(
-                        In(AdminService.ACTIVE_SERVICE_TERMINAL_STATUSES),
-                    ),
+                    status: { notIn: AdminService.ACTIVE_SERVICE_TERMINAL_STATUSES },
                 },
-                { accountantId },
-            );
+                data: { accountantId },
+            });
+
+            const updatedUser = await this.prisma.user.update({
+                where: { id: userId },
+                data: { accountantId }
+            });
 
             // Notify the accountant
             await this.notificationService.sendAccountantAssignmentNotification(
                 accountant,
-                user,
-            );
+                user as any,
+            ).catch(err => console.error('[AdminService] Failed to notify accountant:', err));
 
+            return updatedUser;
         } else {
-            user.accountantId = null;
-            await this.userServicesRepository.update(
-                {
+            await this.prisma.userService.updateMany({
+                where: {
                     userId,
-                    status: Not(
-                        In(AdminService.ACTIVE_SERVICE_TERMINAL_STATUSES),
-                    ),
+                    status: { notIn: AdminService.ACTIVE_SERVICE_TERMINAL_STATUSES },
                 },
-                { accountantId: null },
-            );
-        }
+                data: { accountantId: null },
+            });
 
-        return this.usersRepository.save(user);
+            return this.prisma.user.update({
+                where: { id: userId },
+                data: { accountantId: null }
+            });
+        }
     }
 
     async updateRole(id: number, role: string) {
-        const user = await this.usersRepository.findOneOrFail({
+        const user = (await this.prisma.user.findUniqueOrThrow({
             where: { id },
-        });
-        user.role = role;
+        })) as any;
+        
+        const updateData: any = { role };
         if (role !== 'user') {
-            user.rmId = null;
-            user.accountantId = null;
+            updateData.rmId = null;
+            updateData.accountantId = null;
         }
+        
         // Auto-generate unique IDs on role promotion
         if (role === 'regional_manager' && !user.rmUniqueId) {
-            user.rmUniqueId = UniqueIDGenerator.generateUserUniqueID('regional_manager');
+            updateData.rmUniqueId = UniqueIDGenerator.generateUserUniqueID('regional_manager');
         } else if (role === 'accountant' && !user.accountantUniqueId) {
-            user.accountantUniqueId = UniqueIDGenerator.generateUserUniqueID('accountant');
+            updateData.accountantUniqueId = UniqueIDGenerator.generateUserUniqueID('accountant');
         }
-        return this.usersRepository.save(user);
+
+        return this.prisma.user.update({
+            where: { id },
+            data: updateData
+        });
     }
 
     // ─── Category Management ──────────────────────────────────────────────────
 
     async getCategories() {
-        const categories = await this.categoriesRepository
-            .createQueryBuilder('category')
-            .loadRelationCountAndMap('category.services_count', 'category.services')
-            .orderBy('category.name', 'ASC')
-            .getMany();
+        const categories = await this.prisma.serviceCategory.findMany({
+            include: {
+                _count: {
+                    select: { services: true }
+                }
+            },
+            orderBy: { name: 'asc' },
+        });
 
-        return categories.map(toAdminCategoryResource);
+        return categories.map(cat => toAdminCategoryResource({
+            ...cat,
+            services_count: cat._count.services
+        }));
     }
 
     async storeCategory(data: AdminCategoryInput) {
@@ -302,13 +317,14 @@ export class AdminService {
         }
 
         const slug = this.slugify(normalized.name);
-        const category = this.categoriesRepository.create({
-            ...normalized,
-            slug,
-        });
-
+        
         try {
-            const saved = await this.categoriesRepository.save(category);
+            const saved = await this.prisma.serviceCategory.create({
+                data: {
+                    ...normalized,
+                    slug,
+                }
+            });
             return toAdminCategoryResource(saved);
         } catch (error) {
             this.rethrowFriendlyConstraintError(error, 'Category');
@@ -317,16 +333,18 @@ export class AdminService {
     }
 
     async updateCategory(id: number, data: AdminCategoryInput) {
-        const category = await this.categoriesRepository.findOneOrFail({ where: { id } });
         const normalized = normalizeAdminCategoryInput(data);
-
-        Object.assign(category, normalized);
+        const updateData: any = { ...normalized };
+        
         if (normalized.name) {
-            category.slug = this.slugify(normalized.name);
+            updateData.slug = this.slugify(normalized.name);
         }
 
         try {
-            const saved = await this.categoriesRepository.save(category);
+            const saved = await this.prisma.serviceCategory.update({
+                where: { id },
+                data: updateData
+            });
             return toAdminCategoryResource(saved);
         } catch (error) {
             this.rethrowFriendlyConstraintError(error, 'Category');
@@ -335,31 +353,31 @@ export class AdminService {
     }
 
     async deleteCategory(id: number) {
-        const category = await this.categoriesRepository.findOneOrFail({
+        const category = await this.prisma.serviceCategory.findUniqueOrThrow({
             where: { id },
-            relations: { services: true },
+            include: { services: true },
         });
         if (category.services.length > 0) {
             throw new BadRequestException('Cannot delete category with existing services');
         }
-        await this.categoriesRepository.delete(id);
+        await this.prisma.serviceCategory.delete({ where: { id } });
     }
 
     // ─── Service Management ───────────────────────────────────────────────────
 
     async getServices() {
-        const services = await this.servicesRepository.find({
-            relations: { category: true },
-            order: { id: 'DESC' },
+        const services = await this.prisma.service.findMany({
+            include: { category: true },
+            orderBy: { id: 'desc' },
         });
 
         return services.map(toAdminServiceResource);
     }
 
     async getService(id: number) {
-        const service = await this.servicesRepository.findOneOrFail({
+        const service = await this.prisma.service.findUniqueOrThrow({
             where: { id },
-            relations: { category: true, documents: true },
+            include: { category: true, documents: true },
         });
 
         return toAdminServiceResource(service);
@@ -378,13 +396,13 @@ export class AdminService {
 
         await this.ensureCategoryExists(normalized.serviceCategoryId);
 
-        const service = this.servicesRepository.create({
-            ...normalized,
-            slug: this.slugify(normalized.name),
-        });
-
         try {
-            const saved = await this.servicesRepository.save(service);
+            const saved = await this.prisma.service.create({
+                data: {
+                    ...normalized,
+                    slug: this.slugify(normalized.name),
+                }
+            });
             return this.getService(saved.id);
         } catch (error) {
             this.rethrowFriendlyConstraintError(error, 'Service');
@@ -393,21 +411,23 @@ export class AdminService {
     }
 
     async updateService(id: number, data: AdminServiceInput) {
-        const service = await this.servicesRepository.findOneOrFail({ where: { id } });
         const normalized = normalizeAdminServiceInput(data);
 
         if (normalized.serviceCategoryId !== undefined) {
             await this.ensureCategoryExists(normalized.serviceCategoryId);
         }
 
-        Object.assign(service, normalized);
+        const updateData: any = { ...normalized };
         if (normalized.name) {
-            service.slug = this.slugify(normalized.name);
+            updateData.slug = this.slugify(normalized.name);
         }
 
         try {
-            await this.servicesRepository.save(service);
-            return this.getService(service.id);
+            await this.prisma.service.update({
+                where: { id },
+                data: updateData
+            });
+            return this.getService(id);
         } catch (error) {
             this.rethrowFriendlyConstraintError(error, 'Service');
             throw error;
@@ -415,10 +435,10 @@ export class AdminService {
     }
 
     async deleteService(id: number) {
-        await this.servicesRepository.findOneOrFail({ where: { id } });
+        await this.prisma.service.findUniqueOrThrow({ where: { id } });
 
         try {
-            await this.servicesRepository.delete(id);
+            await this.prisma.service.delete({ where: { id } });
         } catch (error) {
             if (this.isConstraintError(error)) {
                 throw new BadRequestException(
@@ -433,8 +453,8 @@ export class AdminService {
     // ─── Enquiry Management ───────────────────────────────────────────────────
 
     async getEnquiries() {
-        const enquiries = await this.enquiriesRepository.find({
-            order: { createdAt: 'DESC' },
+        const enquiries = await this.prisma.enquiry.findMany({
+            orderBy: { createdAt: 'desc' },
         });
         return enquiries.map(toEnquiryResource);
     }
@@ -444,19 +464,15 @@ export class AdminService {
             throw new BadRequestException('Invalid enquiry status');
         }
 
-        const enquiry = await this.enquiriesRepository.findOneOrFail({
+        const saved = await this.prisma.enquiry.update({
             where: { id },
+            data: { status }
         });
-        enquiry.status = status;
-        const saved = await this.enquiriesRepository.save(enquiry);
         return toEnquiryResource(saved);
     }
 
     async deleteEnquiry(id: number) {
-        const enquiry = await this.enquiriesRepository.findOneOrFail({
-            where: { id },
-        });
-        await this.enquiriesRepository.remove(enquiry);
+        await this.prisma.enquiry.delete({ where: { id } });
     }
 
     // ─── Application Management ───────────────────────────────────────────────
@@ -466,14 +482,14 @@ export class AdminService {
     }
 
     async getServiceApplication(id: number) {
-        const userService = await this.userServicesRepository.findOneOrFail({
+        const userService = (await this.prisma.userService.findUniqueOrThrow({
             where: { id },
-            relations: {
+            include: {
                 user: true,
-                service: { category: true },
+                service: { include: { category: true } },
                 accountant: true,
             },
-        });
+        })) as any;
 
         await this.userServicesService.populateRequestDocuments(userService);
         await this.userServicesService.populateLatestPayments(userService);
@@ -485,41 +501,45 @@ export class AdminService {
         id: number,
         data: UpdateApplicationStatusInput,
     ) {
+        id = this.normalizeInteger(id, 'application_id');
         const result = await this.userServicesService.updateApplicationStatus(id, data);
 
         // Send finalized notification if marked completed/approved
         if (data.status === 'completed' || data.status === 'approved') {
-            const userService = await this.userServicesRepository.findOne({
+            const userService = (await this.prisma.userService.findUnique({
                 where: { id },
-                relations: { user: true, service: true },
-            });
+                include: { user: true, service: true },
+            })) as any;
             if (userService?.user) {
                 await this.notificationService.sendServiceFinalizedNotification(
                     userService.user,
                     userService,
-                );
+                ).catch(err => console.error('[AdminService] Notification error:', err));
             }
-
         }
 
         return result;
     }
 
     async assignAccountantToService(id: number, accountantId: number) {
-        const accountant = await this.usersRepository.findOne({
+        id = this.normalizeInteger(id, 'application_id');
+        accountantId = this.normalizeInteger(accountantId, 'accountant_id');
+
+        const accountant = (await this.prisma.user.findFirst({
             where: { id: accountantId, role: 'accountant' },
-        });
+        })) as any;
         if (!accountant) throw new NotFoundException('Accountant not found');
 
         const result = await this.userServicesService.assignAccountantToService(id, accountantId);
 
         // Notify accountant
-        const userService = await this.userServicesRepository.findOne({
+        const userService = (await this.prisma.userService.findUnique({
             where: { id },
-            relations: { user: true, service: true },
-        });
+            include: { user: true, service: true },
+        })) as any;
         if (userService) {
-            await this.notificationService.sendServiceAssignmentNotification(accountant, userService);
+            await this.notificationService.sendServiceAssignmentNotification(accountant, userService)
+                .catch(err => console.error('[AdminService] Notification error:', err));
         }
 
 
@@ -543,31 +563,29 @@ export class AdminService {
     // ─── Details & Stats ──────────────────────────────────────────────────────
 
     async getRegionalManagerDetails(id: number) {
-        const rm = await this.usersRepository.findOneOrFail({
+        const rm = (await this.prisma.user.findFirstOrThrow({
             where: { id, role: 'regional_manager' },
-            relations: { assignedUsers: { accountant: true } },
-        });
+            include: { assignedUsers: { include: { accountant: true } } },
+        })) as any;
 
-        const managedUserIds = Array.isArray(rm.assignedUsers) ? rm.assignedUsers.map((u) => u.id) : [];
+        const managedUserIds = Array.isArray(rm.assignedUsers) ? rm.assignedUsers.map((u: any) => u.id) : [];
 
         const activeServicesCount = managedUserIds.length > 0
-            ? await this.userServicesRepository.count({
-                where: { userId: In(managedUserIds) },
+            ? await this.prisma.userService.count({
+                where: { userId: { in: managedUserIds } },
             })
             : 0;
 
-        const totalRevenue = managedUserIds.length > 0
-            ? await this.userServicesRepository
-                .createQueryBuilder('us')
-                .select('SUM(s.price)', 'total')
-                .innerJoin('us.service', 's')
-                .where('us.userId IN (:...ids)', { ids: managedUserIds })
-                .getRawOne()
-            : { total: 0 };
+        const totalRevenueResult = managedUserIds.length > 0
+            ? await this.prisma.userService.aggregate({
+                where: { userId: { in: managedUserIds } },
+                _sum: { amount: true }
+            })
+            : { _sum: { amount: 0 } };
 
-        (rm as any).active_services_count = activeServicesCount;
-        (rm as any).total_revenue = Number(totalRevenue?.total ?? 0);
-        (rm as any).performance_score = this.calculateRmPerformanceScore(
+        rm.active_services_count = activeServicesCount;
+        rm.total_revenue = Number(totalRevenueResult._sum.amount ?? 0);
+        rm.performance_score = this.calculateRmPerformanceScore(
             rm.assignedUsers.length,
             0,
         );
@@ -576,43 +594,41 @@ export class AdminService {
     }
 
     async getAccountantDetails(id: number) {
-        const accountant = await this.usersRepository.findOneOrFail({
+        const accountant = (await this.prisma.user.findFirstOrThrow({
             where: { id, role: 'accountant' },
-            relations: { assignedAccountantUsers: { regionalManager: true } },
-        });
+            include: { assignedAccountants: { include: { regionalManager: true } } },
+        })) as any;
 
-        const services = await this.userServicesRepository.find({
+        const services = await this.prisma.userService.findMany({
             where: { accountantId: id },
-            relations: { user: { regionalManager: true }, service: { category: true } },
+            include: { user: { include: { regionalManager: true } }, service: { include: { category: true } } },
         });
 
-        const totalRevenue = await this.userServicesRepository
-            .createQueryBuilder('us')
-            .select('SUM(s.price)', 'total')
-            .innerJoin('us.service', 's')
-            .where('us.accountantId = :id', { id })
-            .getRawOne();
+        const totalRevenueResult = await this.prisma.userService.aggregate({
+            where: { accountantId: id },
+            _sum: { amount: true }
+        });
 
-        (accountant as any).services = services;
-        (accountant as any).active_services_count = services.length;
-        (accountant as any).total_revenue = Number(totalRevenue?.total ?? 0);
-        (accountant as any).completion_rate = this.calculateAccountantCompletionRate(services);
-        (accountant as any).performance_score = this.calculateAccountantPerformanceScore(
+        accountant.services = services;
+        accountant.active_services_count = services.length;
+        accountant.total_revenue = Number(totalRevenueResult._sum.amount ?? 0);
+        accountant.completion_rate = this.calculateAccountantCompletionRate(services);
+        accountant.performance_score = this.calculateAccountantPerformanceScore(
             services.length,
-            (accountant as any).completion_rate,
+            accountant.completion_rate,
         );
 
         return accountant;
     }
 
     async getUserDetails(id: number) {
-        return this.usersRepository.findOneOrFail({
+        return this.prisma.user.findUniqueOrThrow({
             where: { id },
-            relations: {
+            include: {
                 regionalManager: true,
                 accountant: true,
                 assignedUsers: true,
-                assignedAccountantUsers: true,
+                assignedAccountants: true,
             },
         });
     }
@@ -628,7 +644,7 @@ export class AdminService {
         return 'Inactive';
     }
 
-    private calculateAccountantCompletionRate(services: UserServiceEntity[]) {
+    private calculateAccountantCompletionRate(services: any[]) {
         if (services.length === 0) return 0;
         const completed = services.filter((s) => s.status === 'completed').length;
         return Math.round((completed / services.length) * 100);
@@ -644,20 +660,25 @@ export class AdminService {
     }
 
     async getStats() {
-        const totalUsers = await this.usersRepository.count({ where: { role: 'user' } });
-        const pendingApplications = await this.userServicesRepository.count({
-            where: { status: In(['applied', 'under_review', 'update_required', 'in_progress', 'submitted_to_ca']) },
+        const totalUsers = await this.prisma.user.count({ where: { role: 'user' } });
+        const pendingApplications = await this.prisma.userService.count({
+            where: {
+                status: {
+                    in: [...REVIEW_QUEUE_APPLICATION_STATUSES],
+                },
+            },
         });
 
         // Simple revenue calculation (sum of all paid services)
-        const revenueResult = await this.userServicesRepository
-            .createQueryBuilder('us')
-            .select('SUM(CAST(us.amount AS DECIMAL(10,2)))', 'total_revenue')
-            .where('us.status != :status', { status: 'in_cart' })
-            .andWhere('us.payment_status = :paymentStatus', { paymentStatus: 'success' })
-            .getRawOne();
+        const revenueResult = await this.prisma.userService.aggregate({
+            where: {
+                status: { not: 'in_cart' },
+                paymentStatus: { in: ['success', 'paid'] },
+            },
+            _sum: { amount: true }
+        });
 
-        const totalRevenue = revenueResult?.total_revenue || 0;
+        const totalRevenue = Number(revenueResult._sum.amount || 0);
 
         return {
             total_users: totalUsers,
@@ -668,15 +689,15 @@ export class AdminService {
 
     async getActivity() {
         // Fetch recent users
-        const recentUsers = await this.usersRepository.find({
-            order: { createdAt: 'DESC' },
+        const recentUsers = await this.prisma.user.findMany({
+            orderBy: { createdAt: 'desc' },
             take: 5,
         });
 
         // Fetch recent service applications
-        const recentServices = await this.userServicesRepository.find({
-            relations: { user: true, service: true },
-            order: { createdAt: 'DESC' },
+        const recentServices = await this.prisma.userService.findMany({
+            include: { user: true, service: true },
+            orderBy: { createdAt: 'desc' },
             take: 5,
         });
 
@@ -704,7 +725,7 @@ export class AdminService {
     }
 
     private async ensureCategoryExists(serviceCategoryId: number) {
-        const category = await this.categoriesRepository.findOne({
+        const category = await this.prisma.serviceCategory.findUnique({
             where: { id: serviceCategoryId },
         });
 
@@ -723,18 +744,16 @@ export class AdminService {
         );
     }
 
-    private isConstraintError(error: unknown) {
-        if (!(error instanceof QueryFailedError)) {
-            return false;
-        }
-
+    private isConstraintError(error: any) {
         const message = String(error.message || '').toLowerCase();
 
         return (
             message.includes('duplicate') ||
             message.includes('unique') ||
             message.includes('constraint') ||
-            message.includes('foreign key')
+            message.includes('foreign key') ||
+            message.includes('p2002') || // Prisma unique constraint error
+            message.includes('p2003')    // Prisma foreign key constraint error
         );
     }
 }

@@ -4,11 +4,9 @@ import {
     NotFoundException,
     Logger,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, IsNull, Not } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { UserServiceEntity } from '../infrastructure/persistence/user-service.entity';
-import { PaymentEntity } from '../infrastructure/persistence/payment.entity';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../../shared/services/prisma.service';
 import { UniqueIDGenerator } from '../../../shared/utils/unique-id.generator';
 import { NotificationService } from '../../communication/notification.service';
 import { PdfService } from '../../../shared/services/pdf.service';
@@ -56,10 +54,7 @@ export class PaymentService {
     private static readonly GST_RATE = 0.18;
 
     constructor(
-        @InjectRepository(UserServiceEntity)
-        private readonly userServicesRepository: Repository<UserServiceEntity>,
-        @InjectRepository(PaymentEntity)
-        private readonly paymentsRepository: Repository<PaymentEntity>,
+        private readonly prisma: PrismaService,
         private readonly configService: ConfigService,
         private readonly notificationService: NotificationService,
         private readonly pdfService: PdfService,
@@ -73,9 +68,9 @@ export class PaymentService {
     }
 
     async createOrder(userServiceId: number) {
-        const userService = await this.userServicesRepository.findOne({
+        const userService = await this.prisma.userService.findUnique({
             where: { id: userServiceId },
-            relations: { service: true, user: true },
+            include: { service: true, user: true },
         });
 
         if (!userService) {
@@ -98,34 +93,38 @@ export class PaymentService {
             const order = await this.createRazorpayOrder(options);
 
             // Re-use existing pending or failed payment for this service request if it exists
-            let payment = await this.paymentsRepository.findOne({
+            let payment = await this.prisma.payment.findFirst({
                 where: {
                     userServiceId: userService.id,
-                    status: In(['pending', 'failed'])
+                    status: { in: ['pending', 'failed'] }
                 }
             });
 
             if (payment) {
-                payment.paymentProviderOrderId = order.id;
-                payment.amount = totals.grandTotal;
-                payment.status = 'pending';
-                payment.paymentStatus = 'pending';
-                // Move it to the top of the history
-                payment.createdAt = new Date();
-                await this.paymentsRepository.save(payment);
-            } else {
-                payment = this.paymentsRepository.create({
-                    userId: userService.userId,
-                    userServiceId: userService.id,
-                    amount: totals.grandTotal,
-                    paymentProviderOrderId: order.id,
-                    orderUniqueId: UniqueIDGenerator.generateOrderID(),
-                    invoiceUniqueId: UniqueIDGenerator.generateInvoiceID(),
-                    notes: { user_service_id: userService.id },
-                    status: 'pending',
-                    paymentStatus: 'pending',
+                payment = await this.prisma.payment.update({
+                    where: { id: payment.id },
+                    data: {
+                        paymentProviderOrderId: order.id,
+                        amount: totals.grandTotal,
+                        status: 'pending',
+                        paymentStatus: 'pending',
+                        createdAt: new Date(),
+                    }
                 });
-                await this.paymentsRepository.save(payment);
+            } else {
+                payment = await this.prisma.payment.create({
+                    data: {
+                        userId: userService.userId,
+                        userServiceId: userService.id,
+                        amount: totals.grandTotal,
+                        paymentProviderOrderId: order.id,
+                        orderUniqueId: UniqueIDGenerator.generateOrderID(),
+                        invoiceUniqueId: UniqueIDGenerator.generateInvoiceID(),
+                        notes: { user_service_id: userService.id } as any,
+                        status: 'pending',
+                        paymentStatus: 'pending',
+                    }
+                });
             }
 
             return {
@@ -151,9 +150,9 @@ export class PaymentService {
     }
 
     async createCartOrder(userId: number) {
-        const items = await this.userServicesRepository.find({
+        const items = await this.prisma.userService.findMany({
             where: { userId, status: 'in_cart' },
-            relations: { service: true },
+            include: { service: true },
         });
 
         if (items.length === 0) {
@@ -181,23 +180,24 @@ export class PaymentService {
             const order = await this.createRazorpayOrder(options);
 
             // Mark previous pending cart payments as abandoned to avoid clutter
-            await this.paymentsRepository.update(
-                { userId, status: 'pending', userServiceId: IsNull() },
-                { status: 'abandoned' }
-            );
+            await this.prisma.payment.updateMany({
+                where: { userId, status: 'pending', userServiceId: null },
+                data: { status: 'abandoned' }
+            });
 
             // Persist payment record for cart
-            const payment = this.paymentsRepository.create({
-                userId,
-                amount: totals.grandTotal,
-                paymentProviderOrderId: order.id,
-                orderUniqueId: UniqueIDGenerator.generateOrderID(),
-                invoiceUniqueId: UniqueIDGenerator.generateInvoiceID(),
-                notes: { cart_item_ids: items.map((item) => item.id) },
-                status: 'pending',
-                paymentStatus: 'pending',
+            const payment = await this.prisma.payment.create({
+                data: {
+                    userId,
+                    amount: totals.grandTotal,
+                    paymentProviderOrderId: order.id,
+                    orderUniqueId: UniqueIDGenerator.generateOrderID(),
+                    invoiceUniqueId: UniqueIDGenerator.generateInvoiceID(),
+                    notes: { cart_item_ids: items.map((item) => item.id) } as any,
+                    status: 'pending',
+                    paymentStatus: 'pending',
+                }
             });
-            await this.paymentsRepository.save(payment);
 
             return {
                 amount: totals.grandTotal,
@@ -232,7 +232,7 @@ export class PaymentService {
             .digest('hex');
 
         if (expectedSignature === payload.razorpay_signature) {
-            const payment = await this.paymentsRepository.findOne({
+            const payment = await this.prisma.payment.findUnique({
                 where: { id: payload.payment_id },
             });
 
@@ -240,31 +240,38 @@ export class PaymentService {
                 throw new NotFoundException('Payment record not found');
             }
 
-            payment.status = 'paid';
-            payment.paymentStatus = 'paid';
-            payment.paymentProviderTransactionId = payload.razorpay_payment_id;
-            payment.paymentProviderStatus = 'captured';
-            await this.paymentsRepository.save(payment);
+            await this.prisma.payment.update({
+                where: { id: payment.id },
+                data: {
+                    status: 'paid',
+                    paymentStatus: 'paid',
+                    paymentProviderTransactionId: payload.razorpay_payment_id,
+                    paymentProviderStatus: 'captured',
+                }
+            });
 
             const cartItemIds = (payment.notes as any)?.cart_item_ids || [];
 
             if (payload.is_cart && cartItemIds.length > 0) {
-                await this.userServicesRepository.update(cartItemIds, {
-                    status: 'paid',
-                    paymentStatus: 'success',
+                await this.prisma.userService.updateMany({
+                    where: { id: { in: cartItemIds } },
+                    data: {
+                        status: 'paid',
+                        paymentStatus: 'success',
+                    }
                 });
             } else if (payment.userServiceId) {
-                await this.userServicesRepository.update(
-                    payment.userServiceId,
-                    { status: 'paid', paymentStatus: 'success' },
-                );
+                await this.prisma.userService.update({
+                    where: { id: payment.userServiceId },
+                    data: { status: 'paid', paymentStatus: 'success' },
+                });
             }
 
             // Notify user about successful payment
-            const paymentWithUser = await this.paymentsRepository.findOne({
+            const paymentWithUser = (await this.prisma.payment.findUnique({
                 where: { id: payment.id },
-                relations: { user: true, userService: { service: true } },
-            });
+                include: { user: true, userService: { include: { service: true } } },
+            })) as any;
             const user = paymentWithUser?.user;
 
             if (user) {
@@ -302,7 +309,11 @@ export class PaymentService {
                 try {
                     await this.notificationService.sendPaymentSuccessNotification(
                         user,
-                        payment,
+                        {
+                            amount: Number(payment.amount || 0),
+                            orderUniqueId: payment.orderUniqueId,
+                            invoiceUniqueId: payment.invoiceUniqueId,
+                        },
                         serviceName,
                         invoiceAttachment
                             ? { attachments: [invoiceAttachment] }
@@ -332,28 +343,32 @@ export class PaymentService {
     }
 
     async failPayment(paymentId: number, reason?: string) {
-        const payment = await this.paymentsRepository.findOne({
+        const payment = await this.prisma.payment.findUnique({
             where: { id: paymentId },
         });
 
         if (payment && payment.status === 'pending') {
-            payment.status = 'failed';
-            payment.paymentStatus = 'failed';
-            payment.notes = {
-                ...((payment.notes as object) || {}),
-                failure_reason: reason || 'User cancelled or gateway failure',
-            };
-            await this.paymentsRepository.save(payment);
+            await this.prisma.payment.update({
+                where: { id: paymentId },
+                data: {
+                    status: 'failed',
+                    paymentStatus: 'failed',
+                    notes: {
+                        ...((payment.notes as object) || {}),
+                        failure_reason: reason || 'User cancelled or gateway failure',
+                    } as any,
+                }
+            });
         }
 
         return { success: true };
     }
 
     async processRefund(paymentId: number, reason?: string) {
-        const payment = await this.paymentsRepository.findOne({
+        const payment = (await this.prisma.payment.findUnique({
             where: { id: paymentId },
-            relations: { userService: true },
-        });
+            include: { userService: true },
+        })) as any;
 
         if (!payment) {
             throw new NotFoundException('Payment not found');
@@ -366,35 +381,48 @@ export class PaymentService {
         // Logic for triggering Razorpay refund could go here
         // For now, we update internal status as per legacy parity
 
-        payment.status = 'refunded';
-        payment.refundStatus = 'processed';
-        payment.refundReason = reason || 'Customer requested refund';
-        payment.refundAmount = payment.amount;
-        await this.paymentsRepository.save(payment);
+        await this.prisma.payment.update({
+            where: { id: paymentId },
+            data: {
+                status: 'refunded',
+                refundStatus: 'processed',
+                refundReason: reason || 'Customer requested refund',
+                refundAmount: payment.amount,
+            }
+        });
 
         const cartItemIds = (payment.notes as any)?.cart_item_ids || [];
         if (cartItemIds.length > 0) {
-            await this.userServicesRepository.update(cartItemIds, {
-                status: 'refunded',
+            await this.prisma.userService.updateMany({
+                where: { id: { in: cartItemIds } },
+                data: { status: 'refunded' }
             });
         } else if (payment.userServiceId) {
-            await this.userServicesRepository.update(payment.userServiceId, {
-                status: 'refunded',
+            await this.prisma.userService.update({
+                where: { id: payment.userServiceId },
+                data: { status: 'refunded' }
             });
         }
 
         // Notify user about refund
         const userService = payment.userServiceId
-            ? await this.userServicesRepository.findOne({
+            ? (await this.prisma.userService.findUnique({
                   where: { id: payment.userServiceId },
-                  relations: { user: true },
-              })
+                  include: { user: true },
+              })) as any
             : null;
 
         if (userService?.user) {
             await this.notificationService.sendRefundNotification(
                 userService.user,
-                payment,
+                {
+                    refundAmount: Number(payment.amount || 0),
+                    orderUniqueId: payment.orderUniqueId,
+                    refundReason:
+                        reason ||
+                        payment.refundReason ||
+                        'Customer requested refund',
+                },
             );
         }
 
@@ -402,7 +430,9 @@ export class PaymentService {
         return payment;
     }
 
-    private calculateTotals(amount: number | string | null | undefined) {
+    private calculateTotals(
+        amount: number | string | Prisma.Decimal | null | undefined,
+    ) {
         const baseAmount = Number(amount || 0);
         const gstAmount = baseAmount * PaymentService.GST_RATE;
         const grandTotal = Math.round(baseAmount + gstAmount);
@@ -430,14 +460,14 @@ export class PaymentService {
     }
 
     async myOrders(userId: number): Promise<PaymentOrderResource[]> {
-        const payments = await this.paymentsRepository.find({
+        const payments = (await this.prisma.payment.findMany({
             where: { 
                 userId,
-                status: Not('abandoned')
+                status: { not: 'abandoned' }
             },
-            relations: { userService: { service: true } },
-            order: { createdAt: 'DESC' },
-        });
+            include: { userService: { include: { service: true } } },
+            orderBy: { createdAt: 'desc' },
+        })) as any[];
 
         const allServiceIds = [
             ...new Set(
@@ -449,10 +479,10 @@ export class PaymentService {
 
         const relatedServices =
             allServiceIds.length > 0
-                ? await this.userServicesRepository.find({
-                      where: { id: In(allServiceIds) },
-                      relations: { service: true },
-                  })
+                ? (await this.prisma.userService.findMany({
+                      where: { id: { in: allServiceIds } },
+                      include: { service: true },
+                  })) as any[]
                 : [];
 
         const servicesById = new Map(
@@ -465,10 +495,10 @@ export class PaymentService {
     }
 
     async downloadInvoice(userId: number, paymentId: number): Promise<Buffer> {
-        const payment = await this.paymentsRepository.findOne({
+        const payment = (await this.prisma.payment.findUnique({
             where: { id: paymentId, userId },
-            relations: { userService: { service: true }, user: true },
-        });
+            include: { userService: { include: { service: true } }, user: true },
+        })) as any;
 
         if (!payment) {
             throw new NotFoundException('Payment not found');
@@ -483,12 +513,12 @@ export class PaymentService {
         return this.generateInvoicePdfForPayment(payment);
     }
 
-    private async generateInvoicePdfForPayment(payment: PaymentEntity) {
+    private async generateInvoicePdfForPayment(payment: any) {
         const context = await this.buildInvoiceContext(payment);
         return this.pdfService.generatePdf('invoice', context);
     }
 
-    private async buildInvoiceContext(payment: PaymentEntity) {
+    private async buildInvoiceContext(payment: any) {
         const orderedServices = await this.resolveRelatedUserServices(payment);
         const relatedServiceIds = this.resolvePaymentServiceIds(payment);
 
@@ -565,7 +595,7 @@ export class PaymentService {
         return context;
     }
 
-    private resolvePaymentServiceIds(payment: PaymentEntity) {
+    private resolvePaymentServiceIds(payment: any) {
         const cartItemIds = Array.isArray((payment.notes as any)?.cart_item_ids)
             ? (payment.notes as any).cart_item_ids
             : [];
@@ -576,7 +606,7 @@ export class PaymentService {
         return [...new Set(serviceIds.map((value) => Number(value)))];
     }
 
-    private isPaymentSettled(payment: PaymentEntity) {
+    private isPaymentSettled(payment: any) {
         const normalizedStatus = String(payment.status || '').toLowerCase();
         const normalizedPaymentStatus = String(
             payment.paymentStatus || '',
@@ -589,14 +619,14 @@ export class PaymentService {
         );
     }
 
-    private async resolveRelatedUserServices(payment: PaymentEntity) {
+    private async resolveRelatedUserServices(payment: any) {
         const relatedServiceIds = this.resolvePaymentServiceIds(payment);
         const relatedServices =
             relatedServiceIds.length > 0
-                ? await this.userServicesRepository.find({
-                      where: { id: In(relatedServiceIds) },
-                      relations: { service: true },
-                  })
+                ? (await this.prisma.userService.findMany({
+                      where: { id: { in: relatedServiceIds } },
+                      include: { service: true },
+                  })) as any[]
                 : [];
         const relatedServicesById = new Map(
             relatedServices.map((service) => [service.id, service]),
@@ -615,11 +645,11 @@ export class PaymentService {
                 return relatedServicesById.get(serviceId) ?? null;
             })
             .filter(
-                (service): service is UserServiceEntity => service !== null,
+                (service): service is any => service !== null,
             );
     }
 
-    private buildPurchasedServicesLabel(services: UserServiceEntity[]) {
+    private buildPurchasedServicesLabel(services: any[]) {
         const serviceNames = services
             .map((service) => service.service?.name?.trim())
             .filter((name): name is string => Boolean(name));
@@ -640,8 +670,8 @@ export class PaymentService {
     }
 
     private toPaymentOrderResource(
-        payment: PaymentEntity,
-        servicesById: Map<number, UserServiceEntity>,
+        payment: any,
+        servicesById: Map<number, any>,
     ): PaymentOrderResource {
         const services = this.resolvePaymentServiceIds(payment)
             .map((serviceId) => {
@@ -656,7 +686,7 @@ export class PaymentService {
                 return servicesById.get(serviceId) ?? null;
             })
             .filter(
-                (service): service is UserServiceEntity => service !== null,
+                (service): service is any => service !== null,
             );
 
         const subtotalFromServices = services.reduce(

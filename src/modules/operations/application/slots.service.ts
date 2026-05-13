@@ -1,15 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { UserServiceEntity } from '../infrastructure/persistence/user-service.entity';
+import { PrismaService } from '../../../shared/services/prisma.service';
 
 @Injectable()
 export class SlotsService {
     private readonly SLOT_CAPACITY = 10;
 
     constructor(
-        @InjectRepository(UserServiceEntity)
-        private readonly userServicesRepository: Repository<UserServiceEntity>,
+        private readonly prisma: PrismaService,
     ) {}
 
     async getAvailability(serviceId: number, date: string) {
@@ -22,30 +19,21 @@ export class SlotsService {
 
         const inactiveStatuses = ['in_cart', 'cancelled', 'rejected', 'approved', 'completed'];
 
-        const query = this.userServicesRepository
-            .createQueryBuilder('us')
-            .select(
-                "JSON_UNQUOTE(JSON_EXTRACT(us.form_data, '$.scheduled_time'))",
-                'scheduled_time',
-            )
-            .addSelect('COUNT(*)', 'count')
-            .where('us.service_id = :serviceId', { serviceId })
-            .andWhere('us.status NOT IN (:...statuses)', {
-                statuses: inactiveStatuses,
-            })
-            .andWhere(
-                "JSON_UNQUOTE(JSON_EXTRACT(us.form_data, '$.scheduled_date')) = :date",
-                { date },
-            )
-            .groupBy('scheduled_time');
+        // Using raw query for JSON extraction and grouping
+        const results = await this.prisma.$queryRaw<any[]>`
+            SELECT 
+                JSON_UNQUOTE(JSON_EXTRACT(form_data, '$.scheduled_time')) as scheduled_time,
+                COUNT(*) as count
+            FROM user_services
+            WHERE service_id = ${serviceId}
+              AND status NOT IN ('in_cart', 'cancelled', 'rejected', 'approved', 'completed')
+              AND JSON_UNQUOTE(JSON_EXTRACT(form_data, '$.scheduled_date')) = ${date}
+            GROUP BY scheduled_time
+        `;
 
-        const results = await query.getRawMany<{
-            count: string;
-            scheduled_time: string;
-        }>();
         const bookingsMap = results.reduce<Record<string, number>>(
             (acc, curr) => {
-                acc[curr.scheduled_time] = Number.parseInt(curr.count, 10);
+                acc[curr.scheduled_time] = Number(curr.count);
                 return acc;
             },
             {},

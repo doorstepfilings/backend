@@ -3,15 +3,10 @@ import {
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, In, Not, QueryFailedError, Repository } from 'typeorm';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../../shared/services/prisma.service';
 import { toUserServiceResource } from './operations.mapper';
-import { ServiceRequestDocumentEntity } from '../infrastructure/persistence/service-request-document.entity';
-import { UserServiceEntity } from '../infrastructure/persistence/user-service.entity';
-import { ServiceEntity } from '../../catalog/infrastructure/persistence/service.entity';
-import { UserEntity } from '../../identity/infrastructure/persistence/user.entity';
-import { EnquiryEntity } from '../../customer/infrastructure/persistence/enquiry.entity';
-import { PaymentEntity } from '../infrastructure/persistence/payment.entity';
+import { buildAdminApplicationWhere } from './user-service-status';
 import {
     DocumentUploadService,
     type UploadedDocumentFile,
@@ -38,43 +33,36 @@ export type UpdateApplicationStatusInput = {
 @Injectable()
 export class UserServicesService {
     constructor(
-        @InjectRepository(UserServiceEntity)
-        private readonly userServicesRepository: Repository<UserServiceEntity>,
-        @InjectRepository(ServiceRequestDocumentEntity)
-        private readonly requestDocumentsRepository: Repository<ServiceRequestDocumentEntity>,
-        @InjectRepository(ServiceEntity)
-        private readonly servicesRepository: Repository<ServiceEntity>,
-        @InjectRepository(UserEntity)
-        private readonly usersRepository: Repository<UserEntity>,
-        @InjectRepository(EnquiryEntity)
-        private readonly enquiriesRepository: Repository<EnquiryEntity>,
-        @InjectRepository(PaymentEntity)
-        private readonly paymentsRepository: Repository<PaymentEntity>,
+        private readonly prisma: PrismaService,
         private readonly slotsService: SlotsService,
         private readonly documentUploadService: DocumentUploadService,
     ) {}
 
     async getMyServices(userId: number) {
-        const services = await this.userServicesRepository.find({
+        const services = (await this.prisma.userService.findMany({
             where: {
-                status: Not('in_cart'),
+                status: { not: 'in_cart' },
                 userId,
             },
-            relations: {
+            include: {
                 accountant: true,
                 service: {
-                    category: true,
-                    documents: true,
+                    include: {
+                        category: true,
+                        documents: true,
+                    },
                 },
                 user: {
-                    accountant: true,
-                    regionalManager: true,
+                    include: {
+                        accountant: true,
+                        regionalManager: true,
+                    },
                 },
             },
-            order: {
-                createdAt: 'DESC',
+            orderBy: {
+                createdAt: 'desc',
             },
-        });
+        })) as any[];
 
         await this.populateRequestDocuments(services);
         await this.populateLatestPayments(services);
@@ -93,16 +81,16 @@ export class UserServicesService {
         dto: ApplyServiceDto,
         files: UploadedDocumentFile[] = [],
     ) {
-        const service = await this.servicesRepository.findOne({
+        const service = await this.prisma.service.findUnique({
             where: { id: dto.service_id },
-            relations: { documents: true },
+            include: { documents: true },
         });
 
         if (!service) {
             throw new NotFoundException('Service not found');
         }
 
-        const user = await this.usersRepository.findOneOrFail({
+        const user = await this.prisma.user.findUniqueOrThrow({
             where: { id: userId },
         });
 
@@ -133,11 +121,11 @@ export class UserServicesService {
         }
 
         // Check if already applied
-        const existing = await this.userServicesRepository.findOne({
+        const existing = await this.prisma.userService.findFirst({
             where: {
                 userId,
                 serviceId: dto.service_id,
-                status: In(['applied', 'in_progress', 'completed']),
+                status: { in: ['applied', 'in_progress', 'completed'] },
             },
         });
 
@@ -148,18 +136,18 @@ export class UserServicesService {
         }
 
         // Resolve amount (if not already set in cart)
-        let amount = service.price;
+        let amount: Prisma.Decimal | string | number | null = service.price;
         if (formData.pricing_plan && Array.isArray(service.pricingPlans)) {
             const plan = (service.pricingPlans as PricingPlan[]).find(
                 (item) => item.name === formData.pricing_plan,
             );
             if (plan?.price !== undefined && plan.price !== null) {
-                amount = String(plan.price);
+                amount = plan.price;
             }
         }
 
         // Update or create
-        let userService = await this.userServicesRepository.findOne({
+        let userService = await this.prisma.userService.findFirst({
             where: {
                 userId,
                 serviceId: dto.service_id,
@@ -168,22 +156,26 @@ export class UserServicesService {
         });
 
         if (userService) {
-            userService.status = 'applied';
-            userService.formData = formData;
-            userService.notes = dto.notes || null;
-            userService.amount = amount;
-            await this.userServicesRepository.save(userService);
+            userService = await this.prisma.userService.update({
+                where: { id: userService.id },
+                data: {
+                    status: 'applied',
+                    formData: formData as any,
+                    notes: dto.notes || null,
+                    amount,
+                }
+            });
         } else {
-            userService = await this.userServicesRepository.save(
-                this.userServicesRepository.create({
+            userService = await this.prisma.userService.create({
+                data: {
                     userId,
                     serviceId: dto.service_id,
                     status: 'applied',
-                    formData,
+                    formData: formData as any,
                     notes: dto.notes || null,
                     amount,
-                }),
-            );
+                }
+            });
         }
 
         if (files && files.length > 0) {
@@ -195,24 +187,24 @@ export class UserServicesService {
         }
 
         // Log enquiry
-        await this.enquiriesRepository.save(
-            this.enquiriesRepository.create({
+        await this.prisma.enquiry.create({
+            data: {
                 name: user.name,
                 email: user.email,
                 phone: formData.phone || user.mobileNumber,
                 service: service.name,
                 message: dto.notes || 'Service application submitted',
                 status: 'pending',
-            }),
-        );
+            }
+        });
 
-        const hydrated = await this.userServicesRepository.findOneOrFail({
+        const hydrated = (await this.prisma.userService.findUniqueOrThrow({
             where: { id: userService.id },
-            relations: {
-                service: { category: true, documents: true },
+            include: {
+                service: { include: { category: true, documents: true } },
                 user: true,
             },
-        });
+        })) as any;
 
         await this.populateRequestDocuments(hydrated);
         await this.populateLatestPayments(hydrated);
@@ -228,10 +220,10 @@ export class UserServicesService {
         userServiceId: number,
         files: UploadedDocumentFile[],
     ) {
-        const userService = await this.userServicesRepository.findOne({
+        const userService = await this.prisma.userService.findUnique({
             where: { id: userServiceId, userId },
-            relations: {
-                service: { category: true, documents: true },
+            include: {
+                service: { include: { category: true, documents: true } },
                 user: true,
             },
         });
@@ -260,13 +252,13 @@ export class UserServicesService {
             files,
         );
 
-        const refreshed = await this.userServicesRepository.findOneOrFail({
+        const refreshed = (await this.prisma.userService.findUniqueOrThrow({
             where: { id: userService.id },
-            relations: {
-                service: { category: true, documents: true },
+            include: {
+                service: { include: { category: true, documents: true } },
                 user: true,
             },
-        });
+        })) as any;
 
         await this.populateRequestDocuments(refreshed);
         await this.populateLatestPayments(refreshed);
@@ -278,12 +270,12 @@ export class UserServicesService {
     }
 
     async deleteMyService(userId: number, userServiceId: number) {
-        const userService = await this.userServicesRepository.findOne({
+        const userService = (await this.prisma.userService.findUnique({
             where: { id: userServiceId, userId },
-            relations: {
+            include: {
                 requestDocuments: true,
             },
-        });
+        })) as any;
 
         if (!userService) {
             throw new NotFoundException('Service request not found');
@@ -295,7 +287,7 @@ export class UserServicesService {
             );
         }
 
-        const payments = await this.paymentsRepository.find({
+        const payments = await this.prisma.payment.findMany({
             where: { userServiceId: userService.id },
         });
 
@@ -328,12 +320,12 @@ export class UserServicesService {
         }
 
         if (payments.length > 0) {
-            await this.paymentsRepository.delete({
-                userServiceId: userService.id,
+            await this.prisma.payment.deleteMany({
+                where: { userServiceId: userService.id },
             });
         }
 
-        await this.userServicesRepository.delete(userService.id);
+        await this.prisma.userService.delete({ where: { id: userService.id } });
 
         return true;
     }
@@ -343,7 +335,7 @@ export class UserServicesService {
         userServiceId: number,
         docId: number,
     ) {
-        const userService = await this.userServicesRepository.findOne({
+        const userService = await this.prisma.userService.findUnique({
             where: { id: userServiceId, userId },
         });
 
@@ -370,25 +362,22 @@ export class UserServicesService {
     }
 
     async getAllServices(status?: string) {
-        const where: FindOptionsWhere<UserServiceEntity> =
-            status && status !== 'all'
-                ? { status }
-                : { status: Not('in_cart') };
-
-        const services = await this.userServicesRepository.find({
-            where,
-            relations: {
+        const services = (await this.prisma.userService.findMany({
+            where: buildAdminApplicationWhere(status),
+            include: {
                 accountant: true,
                 service: {
-                    category: true,
-                    documents: true,
+                    include: {
+                        category: true,
+                        documents: true,
+                    },
                 },
                 user: true,
             },
-            order: {
-                createdAt: 'DESC',
+            orderBy: {
+                createdAt: 'desc',
             },
-        });
+        })) as any[];
 
         await this.populateRequestDocuments(services);
         await this.populateLatestPayments(services);
@@ -422,7 +411,7 @@ export class UserServicesService {
         id: number,
         data: UpdateApplicationStatusInput,
     ) {
-        const userService = await this.userServicesRepository.findOneOrFail({
+        const userService = await this.prisma.userService.findUniqueOrThrow({
             where: { id },
         });
 
@@ -432,31 +421,34 @@ export class UserServicesService {
             );
         }
 
-        userService.status = data.status;
-        if (data.ca_notes) userService.caNotes = data.ca_notes;
-        if (data.update_note) userService.updateNote = data.update_note;
+        const updateData: any = { status: data.status };
+        if (data.ca_notes) updateData.caNotes = data.ca_notes;
+        if (data.update_note) updateData.updateNote = data.update_note;
         if (data.rejection_reason)
-            userService.rejectionReason = data.rejection_reason;
+            updateData.rejectionReason = data.rejection_reason;
         if (data.certificate_url)
-            userService.certificateUrl = data.certificate_url;
+            updateData.certificateUrl = data.certificate_url;
 
         if (data.status === 'approved') {
-            userService.verified = true;
+            updateData.verified = true;
             if (!userService.certificateUrl && !data.certificate_url) {
                 throw new BadRequestException('Certificate URL is required for approval');
             }
         }
 
-        await this.userServicesRepository.save(userService);
-        
-        const hydrated = await this.userServicesRepository.findOneOrFail({
+        await this.prisma.userService.update({
             where: { id },
-            relations: {
-                service: { category: true, documents: true },
+            data: updateData
+        });
+        
+        const hydrated = (await this.prisma.userService.findUniqueOrThrow({
+            where: { id },
+            include: {
+                service: { include: { category: true, documents: true } },
                 user: true,
                 accountant: true,
             },
-        });
+        })) as any;
 
         await this.populateRequestDocuments(hydrated);
         await this.populateLatestPayments(hydrated);
@@ -471,33 +463,37 @@ export class UserServicesService {
         status: 'verified' | 'rejected',
         notes?: string,
     ) {
-        const userService = await this.userServicesRepository.findOneOrFail({
+        const userService = (await this.prisma.userService.findUniqueOrThrow({
             where: { id: userServiceId },
-            relations: {
-                service: { category: true },
+            include: {
+                service: { include: { category: true } },
                 user: true,
                 accountant: true,
             },
-        });
+        })) as any;
 
-        const document = await this.requestDocumentsRepository.findOne({
+        const document = (await this.prisma.serviceRequestDocument.findFirst({
             where: { id: docId, userServiceId },
-            relations: { uploadedBy: true },
-        });
+            include: { uploadedBy: true },
+        })) as any;
         if (!document) {
             throw new NotFoundException('Document not found in this request');
         }
 
-        document.status = status;
-        if (notes) document.notes = notes;
-
-        await this.userServicesRepository.manager.save(document);
+        await this.prisma.serviceRequestDocument.update({
+            where: { id: docId },
+            data: { status, notes: notes || undefined }
+        });
 
         // If any document is rejected, potentially move the whole application to 'update_required'
         if (status === 'rejected' && userService.status === 'under_review') {
-            userService.status = 'update_required';
-            userService.updateNote = `Document '${document.documentName}' was rejected: ${notes}`;
-            await this.userServicesRepository.save(userService);
+            await this.prisma.userService.update({
+                where: { id: userServiceId },
+                data: {
+                    status: 'update_required',
+                    updateNote: `Document '${document.documentName}' was rejected: ${notes}`
+                }
+            });
         }
 
         userService.requestDocuments = [document];
@@ -508,20 +504,19 @@ export class UserServicesService {
     }
 
     async markVerified(id: number, verified: boolean) {
-        const userService = await this.userServicesRepository.findOneOrFail({
+        await this.prisma.userService.update({
             where: { id },
+            data: { verified }
         });
-        userService.verified = verified;
-        await this.userServicesRepository.save(userService);
 
-        const hydrated = await this.userServicesRepository.findOneOrFail({
+        const hydrated = (await this.prisma.userService.findUniqueOrThrow({
             where: { id },
-            relations: {
-                service: { category: true },
+            include: {
+                service: { include: { category: true } },
                 user: true,
                 accountant: true,
             },
-        });
+        })) as any;
 
         await this.populateRequestDocuments(hydrated);
         await this.populateLatestPayments(hydrated);
@@ -530,50 +525,49 @@ export class UserServicesService {
     }
 
     async getAccountantServices(accountantId: number) {
-        return this.userServicesRepository.find({
-            where: { accountantId, status: Not('in_cart') },
-            relations: {
-                service: { category: true },
+        return (await this.prisma.userService.findMany({
+            where: { accountantId, status: { not: 'in_cart' } },
+            include: {
+                service: { include: { category: true } },
                 user: true,
             },
-            order: { createdAt: 'DESC' },
-        });
+            orderBy: { createdAt: 'desc' },
+        })) as any[];
     }
 
     async getRmServices(rmId: number) {
         // Logic to get services for users connected to this RM
-        return this.userServicesRepository.find({
+        return (await this.prisma.userService.findMany({
             where: {
                 user: { rmId },
-                status: Not('in_cart'),
+                status: { not: 'in_cart' },
             },
-            relations: {
-                service: { category: true },
+            include: {
+                service: { include: { category: true } },
                 user: true,
                 accountant: true,
             },
-            order: { createdAt: 'DESC' },
-        });
+            orderBy: { createdAt: 'desc' },
+        })) as any[];
     }
 
     async assignAccountantToService(
         userServiceId: number,
         accountantId: number,
     ) {
-        const userService = await this.userServicesRepository.findOneOrFail({
+        await this.prisma.userService.update({
             where: { id: userServiceId },
+            data: { accountantId }
         });
-        userService.accountantId = accountantId;
-        await this.userServicesRepository.save(userService);
 
-        const hydrated = await this.userServicesRepository.findOneOrFail({
+        const hydrated = (await this.prisma.userService.findUniqueOrThrow({
             where: { id: userServiceId },
-            relations: {
-                service: { category: true },
+            include: {
+                service: { include: { category: true } },
                 user: true,
                 accountant: true,
             },
-        });
+        })) as any;
 
         await this.populateRequestDocuments(hydrated);
         await this.populateLatestPayments(hydrated);
@@ -581,9 +575,9 @@ export class UserServicesService {
         return toUserServiceResource(hydrated);
     }
 
-    async populateLatestPayments<
-        T extends UserServiceEntity | UserServiceEntity[],
-    >(input: T): Promise<T> {
+    async populateLatestPayments<T extends any | any[]>(
+        input: T,
+    ): Promise<T> {
         const services = Array.isArray(input) ? input : [input];
 
         if (services.length === 0) {
@@ -612,16 +606,22 @@ export class UserServicesService {
             return input;
         }
 
-        const payments = await this.paymentsRepository
-            .createQueryBuilder('payment')
-            .where('(payment.userServiceId IN (:...serviceIds) OR payment.userId IN (:...userIds))', { serviceIds, userIds })
-            .andWhere('payment.status != :status', { status: 'abandoned' })
-            .orderBy('payment.createdAt', 'DESC')
-            .addOrderBy('payment.id', 'DESC')
-            .getMany();
+        const payments = await this.prisma.payment.findMany({
+            where: {
+                OR: [
+                    { userServiceId: { in: serviceIds } },
+                    { userId: { in: userIds } }
+                ],
+                NOT: { status: 'abandoned' }
+            },
+            orderBy: [
+                { createdAt: 'desc' },
+                { id: 'desc' }
+            ]
+        });
 
         const targetServiceIds = new Set(serviceIds);
-        const latestPaymentsByServiceId = new Map<number, PaymentEntity>();
+        const latestPaymentsByServiceId = new Map<number, any>();
 
         for (const payment of payments) {
             const linkedServiceIds = this.resolvePaymentLinkedServiceIds(payment);
@@ -638,16 +638,16 @@ export class UserServicesService {
         }
 
         services.forEach((service) => {
-            service.latestPayment =
+            (service as any).latestPayment =
                 latestPaymentsByServiceId.get(Number(service.id)) ?? null;
         });
 
         return input;
     }
 
-    async populateRequestDocuments<
-        T extends UserServiceEntity | UserServiceEntity[],
-    >(input: T): Promise<T> {
+    async populateRequestDocuments<T extends any | any[]>(
+        input: T,
+    ): Promise<T> {
         const services = Array.isArray(input) ? input : [input];
 
         if (services.length === 0) {
@@ -666,15 +666,15 @@ export class UserServicesService {
         }
 
         try {
-            const documents = await this.requestDocumentsRepository.find({
-                where: { userServiceId: In(serviceIds) },
-                relations: { uploadedBy: true },
-                order: { createdAt: 'ASC' },
+            const documents = await this.prisma.serviceRequestDocument.findMany({
+                where: { userServiceId: { in: serviceIds } },
+                include: { uploadedBy: true },
+                orderBy: { createdAt: 'asc' },
             });
 
             const documentsByServiceId = new Map<
                 number,
-                ServiceRequestDocumentEntity[]
+                any[]
             >();
 
             for (const document of documents) {
@@ -689,7 +689,7 @@ export class UserServicesService {
             }
 
             services.forEach((service) => {
-                service.requestDocuments =
+                (service as any).requestDocuments =
                     documentsByServiceId.get(Number(service.id)) ?? [];
             });
         } catch (error) {
@@ -703,14 +703,14 @@ export class UserServicesService {
             );
 
             services.forEach((service) => {
-                service.requestDocuments = [];
+                (service as any).requestDocuments = [];
             });
         }
 
         return input;
     }
 
-    private resolvePaymentLinkedServiceIds(payment: PaymentEntity) {
+    private resolvePaymentLinkedServiceIds(payment: any) {
         const cartItemIds = Array.isArray((payment.notes as any)?.cart_item_ids)
             ? (payment.notes as any).cart_item_ids
             : [];
@@ -721,7 +721,7 @@ export class UserServicesService {
         return [...new Set(serviceIds.map((value) => Number(value)))];
     }
 
-    private sortByLatestOrderFirst(services: UserServiceEntity[]) {
+    private sortByLatestOrderFirst(services: any[]) {
         services.sort((left, right) => {
             const rightDate = this.resolveServiceSortTimestamp(right);
             const leftDate = this.resolveServiceSortTimestamp(left);
@@ -734,18 +734,14 @@ export class UserServicesService {
         });
     }
 
-    private resolveServiceSortTimestamp(service: UserServiceEntity) {
+    private resolveServiceSortTimestamp(service: any) {
         const primaryDate = service.latestPayment?.createdAt ?? service.createdAt;
         const timestamp = new Date(primaryDate).getTime();
 
         return Number.isFinite(timestamp) ? timestamp : 0;
     }
 
-    private isRecoverableRequestDocumentsQueryError(error: unknown) {
-        if (!(error instanceof QueryFailedError)) {
-            return false;
-        }
-
+    private isRecoverableRequestDocumentsQueryError(error: any) {
         const message = String(error.message || '').toLowerCase();
 
         return (

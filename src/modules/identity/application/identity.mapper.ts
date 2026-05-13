@@ -1,6 +1,4 @@
-import { UserEntity } from '../infrastructure/persistence/user.entity';
-
-export function toUserResource(user: UserEntity) {
+export function toUserResource(user: any) {
     return {
         id: user.id,
         name: user.name,

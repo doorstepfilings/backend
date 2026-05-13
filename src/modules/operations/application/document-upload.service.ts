@@ -1,8 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { ServiceRequestDocumentEntity } from '../infrastructure/persistence/service-request-document.entity';
-import { UserServiceEntity } from '../infrastructure/persistence/user-service.entity';
+import { PrismaService } from '../../../shared/services/prisma.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -26,10 +23,7 @@ export class DocumentUploadService {
     private readonly uploadRoot = path.resolve(process.cwd(), 'public/storage');
 
     constructor(
-        @InjectRepository(ServiceRequestDocumentEntity)
-        private readonly documentsRepository: Repository<ServiceRequestDocumentEntity>,
-        @InjectRepository(UserServiceEntity)
-        private readonly userServicesRepository: Repository<UserServiceEntity>,
+        private readonly prisma: PrismaService,
     ) {
         if (!fs.existsSync(this.uploadRoot)) {
             fs.mkdirSync(this.uploadRoot, { recursive: true });
@@ -41,7 +35,7 @@ export class DocumentUploadService {
         userId: number,
         files: UploadedDocumentFile[],
     ) {
-        const userService = await this.userServicesRepository.findOne({
+        const userService = await this.prisma.userService.findUnique({
             where: { id: userServiceId },
         });
 
@@ -49,7 +43,7 @@ export class DocumentUploadService {
             throw new BadRequestException('User service not found');
         }
 
-        const uploadedDocs: ServiceRequestDocumentEntity[] = [];
+        const uploadedDocs: any[] = [];
 
         for (const file of files) {
             const folder = `service_documents/${userId}/${userServiceId}`;
@@ -72,33 +66,35 @@ export class DocumentUploadService {
 
             fs.writeFileSync(fullPath, file.buffer);
 
-            const doc = this.documentsRepository.create({
-                documentCategory:
-                    documentType === 'client'
-                        ? (file.documentCategory ?? null)
-                        : null,
-                documentName,
-                userServiceId,
-                uploadedById: userId,
-                serviceDocumentId: file.serviceDocumentId ?? null,
-                sourceDocumentId: file.sourceDocumentId ?? null,
-                documentType,
-                fileName: file.originalname,
-                filePath,
-                fileExtension: extension || null,
-                fileSize: file.size,
-                isFinal:
-                    documentType === 'client' ? Boolean(file.isFinal) : false,
-                mimeType: file.mimetype,
-                notes: file.notes ?? null,
-                status:
-                    documentType === 'client' && file.isFinal
-                        ? 'approved'
-                        : 'pending',
-                version,
+            const doc = await this.prisma.serviceRequestDocument.create({
+                data: {
+                    documentCategory:
+                        documentType === 'client'
+                            ? (file.documentCategory ?? null)
+                            : null,
+                    documentName,
+                    userServiceId,
+                    uploadedById: userId,
+                    serviceDocumentId: file.serviceDocumentId ?? null,
+                    sourceDocumentId: file.sourceDocumentId ?? null,
+                    documentType,
+                    fileName: file.originalname,
+                    filePath,
+                    fileExtension: extension || null,
+                    fileSize: BigInt(file.size),
+                    isFinal:
+                        documentType === 'client' ? Boolean(file.isFinal) : false,
+                    mimeType: file.mimetype,
+                    notes: file.notes ?? null,
+                    status:
+                        documentType === 'client' && file.isFinal
+                            ? 'approved'
+                            : 'pending',
+                    version,
+                }
             });
 
-            uploadedDocs.push(await this.documentsRepository.save(doc));
+            uploadedDocs.push(doc);
         }
 
         // Update the JSON documents field in user_service for backward compatibility/easy access
@@ -108,14 +104,17 @@ export class DocumentUploadService {
             const key = doc.documentName || doc.documentType || doc.fileName;
             currentDocs[key] = doc.filePath;
         });
-        userService.documents = currentDocs;
-        await this.userServicesRepository.save(userService);
+
+        await this.prisma.userService.update({
+            where: { id: userService.id },
+            data: { documents: currentDocs as any }
+        });
 
         return uploadedDocs;
     }
 
     async deleteDocument(docId: number, userId: number) {
-        const doc = await this.documentsRepository.findOne({
+        const doc = await this.prisma.serviceRequestDocument.findFirst({
             where: { id: docId, uploadedById: userId },
         });
 
@@ -129,7 +128,7 @@ export class DocumentUploadService {
     }
 
     async deleteDocumentById(docId: number) {
-        const doc = await this.documentsRepository.findOne({
+        const doc = await this.prisma.serviceRequestDocument.findUnique({
             where: { id: docId },
         });
 
@@ -166,38 +165,43 @@ export class DocumentUploadService {
             return 1;
         }
 
-        const existing = await this.documentsRepository
-            .createQueryBuilder('document')
-            .select('MAX(document.version)', 'version')
-            .where('document.user_service_id = :userServiceId', {
+        const existing = await this.prisma.serviceRequestDocument.aggregate({
+            where: {
                 userServiceId,
-            })
-            .andWhere('document.document_name = :documentName', {
                 documentName,
-            })
-            .getRawOne<{ version: number | string | null }>();
+            },
+            _max: {
+                version: true,
+            },
+        });
 
-        return Number(existing?.version ?? 0) + 1;
+        return (existing._max.version ?? 0) + 1;
     }
 
-    private async deleteDocumentRecord(doc: ServiceRequestDocumentEntity) {
+    private async deleteDocumentRecord(doc: any) {
         const fullPath = path.join(this.uploadRoot, ...doc.filePath.split('/'));
         if (fs.existsSync(fullPath)) {
             fs.unlinkSync(fullPath);
         }
 
-        const userService = await this.userServicesRepository.findOne({
+        const userService = await this.prisma.userService.findUnique({
             where: { id: doc.userServiceId },
         });
 
-        await this.documentsRepository.delete(doc.id);
+        await this.prisma.serviceRequestDocument.delete({
+            where: { id: doc.id }
+        });
 
         if (userService?.documents) {
-            const entries = Object.entries(userService.documents).filter(
+            const currentDocs = userService.documents as Record<string, string>;
+            const entries = Object.entries(currentDocs).filter(
                 ([, filePath]) => filePath !== doc.filePath,
             );
-            userService.documents = Object.fromEntries(entries);
-            await this.userServicesRepository.save(userService);
+            
+            await this.prisma.userService.update({
+                where: { id: userService.id },
+                data: { documents: Object.fromEntries(entries) as any }
+            });
         }
 
         return true;

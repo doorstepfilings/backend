@@ -1,15 +1,12 @@
-import { ServiceCategoryEntity } from '../infrastructure/persistence/service-category.entity';
-import { ServiceDocumentEntity } from '../infrastructure/persistence/service-document.entity';
-import { ServiceEntity } from '../infrastructure/persistence/service.entity';
 
-export function toServiceCategoryListItem(category: ServiceCategoryEntity) {
+export function toServiceCategoryListItem(category: any) {
     return {
         id: category.id,
         category: category.name,
         slug: category.slug,
         icon: category.icon,
         description: category.description,
-        services: Array.isArray(category.services) ? category.services.map((service) => ({
+        services: Array.isArray(category.services) ? category.services.map((service: any) => ({
             id: service.id,
             name: service.name,
             slug: service.slug,
@@ -24,7 +21,7 @@ export function toServiceCategoryListItem(category: ServiceCategoryEntity) {
     };
 }
 
-export function toServiceResource(service: ServiceEntity) {
+export function toServiceResource(service: any) {
     return {
         id: service.id,
         service_category_id: service.serviceCategoryId,
@@ -53,7 +50,7 @@ export function toServiceResource(service: ServiceEntity) {
     };
 }
 
-function toServiceDocumentResource(document: ServiceDocumentEntity) {
+function toServiceDocumentResource(document: any) {
     return {
         id: document.id,
         service_id: document.serviceId,

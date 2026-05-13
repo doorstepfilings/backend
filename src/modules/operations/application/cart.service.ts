@@ -3,13 +3,8 @@ import {
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { ServiceEntity } from '../../catalog/infrastructure/persistence/service.entity';
-import { UserEntity } from '../../identity/infrastructure/persistence/user.entity';
-import { EnquiryEntity } from '../../customer/infrastructure/persistence/enquiry.entity';
+import { PrismaService } from '../../../shared/services/prisma.service';
 import { toUserServiceResource } from './operations.mapper';
-import { UserServiceEntity } from '../infrastructure/persistence/user-service.entity';
 import { AddToCartDto } from '../presentation/http/dto/add-to-cart.dto';
 
 type PricingPlan = {
@@ -20,18 +15,11 @@ type PricingPlan = {
 @Injectable()
 export class CartService {
     constructor(
-        @InjectRepository(UserServiceEntity)
-        private readonly userServicesRepository: Repository<UserServiceEntity>,
-        @InjectRepository(ServiceEntity)
-        private readonly servicesRepository: Repository<ServiceEntity>,
-        @InjectRepository(UserEntity)
-        private readonly usersRepository: Repository<UserEntity>,
-        @InjectRepository(EnquiryEntity)
-        private readonly enquiriesRepository: Repository<EnquiryEntity>,
+        private readonly prisma: PrismaService,
     ) {}
 
     async addToCart(userId: number, addToCartDto: AddToCartDto) {
-        const existing = await this.userServicesRepository.findOne({
+        const existing = await this.prisma.userService.findFirst({
             where: {
                 serviceId: addToCartDto.service_id,
                 status: 'in_cart',
@@ -43,11 +31,11 @@ export class CartService {
             throw new ConflictException('Service already in cart');
         }
 
-        const service = await this.servicesRepository.findOne({
+        const service = await this.prisma.service.findUnique({
             where: {
                 id: addToCartDto.service_id,
             },
-            relations: {
+            include: {
                 category: true,
                 documents: true,
             },
@@ -57,7 +45,7 @@ export class CartService {
             throw new NotFoundException('Service not found');
         }
 
-        const user = await this.usersRepository.findOne({
+        const user = await this.prisma.user.findUnique({
             where: {
                 id: userId,
             },
@@ -73,39 +61,41 @@ export class CartService {
                 (item) => item.name === addToCartDto.pricing_plan,
             );
             if (plan?.price !== undefined && plan.price !== null) {
-                amount = String(plan.price);
+                amount = String(plan.price) as any;
             }
         }
 
-        const userService = await this.userServicesRepository.save(
-            this.userServicesRepository.create({
+        const userService = await this.prisma.userService.create({
+            data: {
                 serviceId: service.id,
                 status: 'in_cart',
                 userId,
-                formData: addToCartDto.form_data,
+                formData: addToCartDto.form_data as any,
                 amount,
-            }),
-        );
+            }
+        });
 
-        await this.enquiriesRepository.save(
-            this.enquiriesRepository.create({
+        await this.prisma.enquiry.create({
+            data: {
                 email: user.email,
                 message: 'User added service to cart',
                 name: user.name,
                 phone: user.mobileNumber,
                 service: service.name,
                 status: 'pending',
-            }),
-        );
+            }
+        });
 
-        const hydrated = await this.userServicesRepository.findOneOrFail({
+        const hydrated = await this.prisma.userService.findUniqueOrThrow({
             where: {
                 id: userService.id,
             },
-            relations: {
+            include: {
                 service: {
-                    category: true,
-                    documents: true,
+                    include: {
+                        category: true,
+                        documents: true,
+                    },
                 },
             },
         });
@@ -114,19 +104,21 @@ export class CartService {
     }
 
     async getCart(userId: number) {
-        const items = await this.userServicesRepository.find({
+        const items = await this.prisma.userService.findMany({
             where: {
                 status: 'in_cart',
                 userId,
             },
-            relations: {
+            include: {
                 service: {
-                    category: true,
-                    documents: true,
+                    include: {
+                        category: true,
+                        documents: true,
+                    },
                 },
             },
-            order: {
-                createdAt: 'DESC',
+            orderBy: {
+                createdAt: 'desc',
             },
         });
 
@@ -134,7 +126,7 @@ export class CartService {
     }
 
     async removeFromCart(userId: number, id: number) {
-        const userService = await this.userServicesRepository.findOne({
+        const userService = await this.prisma.userService.findFirst({
             where: {
                 id,
                 status: 'in_cart',
@@ -146,8 +138,8 @@ export class CartService {
             throw new NotFoundException('Cart item not found');
         }
 
-        await this.userServicesRepository.delete({
-            id: userService.id,
+        await this.prisma.userService.delete({
+            where: { id: userService.id },
         });
 
         return null;

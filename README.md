@@ -5,13 +5,14 @@ NestJS backend workspace for the Doorstep platform.
 Current focus:
 - run the live backend for the Next.js frontend
 - keep the codebase organized by bounded context
-- use MySQL through TypeORM with production-ready environment validation
+- use MySQL through Prisma with production-ready environment validation
 
 Local setup:
 
 ```bash
 cp .env.example .env
 npm install
+npx prisma migrate dev --name init
 npm run start:dev
 ```
 
@@ -23,12 +24,44 @@ npm run lint
 npm run typecheck
 npm run test
 npm run test:e2e
+npm run seed:dev
+npm run migrate:legacy
+npm run migrate:verify
 ```
 
 Runtime:
 - API base URL: `http://127.0.0.1:4000/api`
 - Health check: `GET /api/health`
-- Database: MySQL
+- Database: MySQL with Prisma
+
+Prisma migration workflow:
+
+```bash
+# local development
+npx prisma migrate dev --name <change-name>
+
+# staging/production
+npx prisma migrate deploy
+```
+
+Fresh Prisma-managed database rollout:
+
+```text
+DB_*         -> fresh NestJS/Prisma database (example: doorstep_nest)
+LEGACY_DB_*  -> existing Laravel database (example: doorstepfilings)
+```
+
+Typical migration flow:
+
+```bash
+# 1. point DB_* at the fresh target database
+# 2. point LEGACY_DB_* at the existing Laravel database
+npx prisma migrate deploy
+npm run migrate:legacy
+npm run migrate:verify
+```
+
+If legacy uploaded files remain on the Laravel server during phase 1, set `LEGACY_STORAGE_ROOTS` so NestJS can continue serving them while the database cutover stabilizes.
 
 Architecture:
 - `src/modules/*`: bounded contexts

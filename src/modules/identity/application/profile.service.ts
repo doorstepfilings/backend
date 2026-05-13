@@ -4,30 +4,22 @@ import {
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import { compare, hash } from 'bcryptjs';
-import { Repository } from 'typeorm';
+import { PrismaService } from '../../../shared/services/prisma.service';
 import { toUserResource } from './identity.mapper';
-import { UserEntity } from '../infrastructure/persistence/user.entity';
 import { ChangePasswordDto } from '../presentation/http/dto/change-password.dto';
 import { UpdateProfileDto } from '../presentation/http/dto/update-profile.dto';
 
 @Injectable()
 export class ProfileService {
-    constructor(
-        @InjectRepository(UserEntity)
-        private readonly usersRepository: Repository<UserEntity>,
-    ) {}
+    constructor(private readonly prisma: PrismaService) {}
 
     async searchRegionalManager(rmUniqueId: string) {
-        const regionalManager = await this.usersRepository.findOne({
-            where: {
-                role: 'regional_manager',
-                rmUniqueId,
-            },
+        const regionalManager = await this.prisma.user.findUnique({
+            where: { rmUniqueId },
         });
 
-        if (!regionalManager) {
+        if (!regionalManager || regionalManager.role !== 'regional_manager') {
             throw new NotFoundException('Regional Manager not found');
         }
 
@@ -41,11 +33,11 @@ export class ProfileService {
     }
 
     async connectRegionalManager(userId: number, rmUniqueId: string) {
-        const user = await this.usersRepository.findOne({
+        const user = await this.prisma.user.findUnique({
             where: {
                 id: userId,
             },
-            relations: {
+            include: {
                 accountant: true,
                 regionalManager: true,
             },
@@ -59,18 +51,15 @@ export class ProfileService {
             throw new BadRequestException('You already have an RM connected');
         }
 
-        const regionalManager = await this.usersRepository.findOne({
-            where: {
-                role: 'regional_manager',
-                rmUniqueId,
-            },
+        const regionalManager = await this.prisma.user.findUnique({
+            where: { rmUniqueId },
         });
 
-        if (!regionalManager) {
+        if (!regionalManager || regionalManager.role !== 'regional_manager') {
             throw new NotFoundException('Regional Manager not found');
         }
 
-        const assignedUserCount = await this.usersRepository.count({
+        const assignedUserCount = await this.prisma.user.count({
             where: {
                 rmId: regionalManager.id,
                 role: 'user',
@@ -83,14 +72,16 @@ export class ProfileService {
             );
         }
 
-        user.rmId = regionalManager.id;
-        await this.usersRepository.save(user);
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: { rmId: regionalManager.id }
+        });
 
-        const hydratedUser = await this.usersRepository.findOneOrFail({
+        const hydratedUser = await this.prisma.user.findUniqueOrThrow({
             where: {
                 id: user.id,
             },
-            relations: {
+            include: {
                 accountant: true,
                 regionalManager: true,
             },
@@ -100,11 +91,11 @@ export class ProfileService {
     }
 
     async updateProfile(userId: number, dto: UpdateProfileDto) {
-        const user = await this.usersRepository.findOne({
+        const user = await this.prisma.user.findUnique({
             where: {
                 id: userId,
             },
-            relations: {
+            include: {
                 accountant: true,
                 regionalManager: true,
             },
@@ -115,7 +106,7 @@ export class ProfileService {
         }
 
         if (dto.email) {
-            const existingEmailUser = await this.usersRepository.findOne({
+            const existingEmailUser = await this.prisma.user.findUnique({
                 where: {
                     email: dto.email.trim().toLowerCase(),
                 },
@@ -127,7 +118,7 @@ export class ProfileService {
         }
 
         if (dto.mobile_number) {
-            const existingMobileUser = await this.usersRepository.findOne({
+            const existingMobileUser = await this.prisma.user.findFirst({
                 where: {
                     mobileNumber: dto.mobile_number,
                 },
@@ -138,23 +129,27 @@ export class ProfileService {
             }
         }
 
-        if (dto.name !== undefined) user.name = dto.name;
+        const updatedData: any = {};
+        if (dto.name !== undefined) updatedData.name = dto.name;
         if (dto.email !== undefined)
-            user.email = dto.email.trim().toLowerCase();
+            updatedData.email = dto.email.trim().toLowerCase();
         if (dto.mobile_number !== undefined)
-            user.mobileNumber = dto.mobile_number;
-        if (dto.address !== undefined) user.address = dto.address;
-        if (dto.city !== undefined) user.city = dto.city;
-        if (dto.state !== undefined) user.state = dto.state;
-        if (dto.pincode !== undefined) user.pincode = dto.pincode;
+            updatedData.mobileNumber = dto.mobile_number;
+        if (dto.address !== undefined) updatedData.address = dto.address;
+        if (dto.city !== undefined) updatedData.city = dto.city;
+        if (dto.state !== undefined) updatedData.state = dto.state;
+        if (dto.pincode !== undefined) updatedData.pincode = dto.pincode;
 
-        await this.usersRepository.save(user);
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: updatedData,
+        });
 
-        const hydratedUser = await this.usersRepository.findOneOrFail({
+        const hydratedUser = await this.prisma.user.findUniqueOrThrow({
             where: {
                 id: user.id,
             },
-            relations: {
+            include: {
                 accountant: true,
                 regionalManager: true,
             },
@@ -174,7 +169,7 @@ export class ProfileService {
             );
         }
 
-        const user = await this.usersRepository.findOne({
+        const user = await this.prisma.user.findUnique({
             where: {
                 id: userId,
             },
@@ -193,8 +188,11 @@ export class ProfileService {
             throw new BadRequestException('Current password is incorrect');
         }
 
-        user.password = await hash(dto.new_password, 10);
-        await this.usersRepository.save(user);
+        const hashedPassword = await hash(dto.new_password, 10);
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: { password: hashedPassword }
+        });
 
         return null;
     }

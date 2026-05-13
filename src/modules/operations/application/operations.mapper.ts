@@ -1,14 +1,23 @@
 import { toServiceResource } from '../../catalog/application/catalog.mapper';
 import { toUserResource } from '../../identity/application/identity.mapper';
-import { ServiceRequestDocumentEntity } from '../infrastructure/persistence/service-request-document.entity';
-import { UserServiceEntity } from '../infrastructure/persistence/user-service.entity';
 
 type UserServiceResourceOptions = {
     includeInternalDocuments?: boolean;
     ownerUserId?: number | null;
 };
 
-function looksLikeCertificate(document: ServiceRequestDocumentEntity) {
+function toJsonSafeScalar(value: unknown) {
+    if (typeof value === 'bigint') {
+        const numericValue = Number(value);
+        return Number.isSafeInteger(numericValue)
+            ? numericValue
+            : value.toString();
+    }
+
+    return value;
+}
+
+function looksLikeCertificate(document: any) {
     if (document.documentCategory === 'certificate') {
         return true;
     }
@@ -18,7 +27,7 @@ function looksLikeCertificate(document: ServiceRequestDocumentEntity) {
     return haystack.includes('certificate');
 }
 
-function looksLikeReport(document: ServiceRequestDocumentEntity) {
+function looksLikeReport(document: any) {
     if (document.documentCategory === 'report') {
         return true;
     }
@@ -29,7 +38,7 @@ function looksLikeReport(document: ServiceRequestDocumentEntity) {
 }
 
 function isClientVisibleDocument(
-    document: ServiceRequestDocumentEntity,
+    document: any,
     ownerUserId?: number | null,
 ) {
     const type = String(document.documentType || '').toLowerCase();
@@ -109,8 +118,10 @@ function isClientVisibleDocument(
 
 
 function toServiceRequestDocumentResource(
-    document: ServiceRequestDocumentEntity,
+    document: any,
 ) {
+    const resolvedFileUrl = document.filePath ?? document.fileUrl ?? null;
+
     return {
         id: document.id,
         document_type: document.documentType,
@@ -119,8 +130,8 @@ function toServiceRequestDocumentResource(
         service_document_id: document.serviceDocumentId,
         source_document_id: document.sourceDocumentId,
         file_name: document.fileName,
-        file_url: document.fileUrl,
-        file_size: document.fileSize,
+        file_url: resolvedFileUrl,
+        file_size: toJsonSafeScalar(document.fileSize),
         mime_type: document.mimeType,
         version: document.version,
         status: document.status,
@@ -139,14 +150,14 @@ function toServiceRequestDocumentResource(
 }
 
 export function toUserServiceResource(
-    userService: UserServiceEntity,
+    userService: any,
     options: UserServiceResourceOptions = {},
 ) {
     const { includeInternalDocuments = true, ownerUserId = null } = options;
     let requestDocuments = Array.isArray(userService.requestDocuments)
         ? includeInternalDocuments
             ? userService.requestDocuments
-            : userService.requestDocuments.filter((document) =>
+            : userService.requestDocuments.filter((document: any) =>
                   isClientVisibleDocument(document, ownerUserId),
               )
         : [];
@@ -156,12 +167,12 @@ export function toUserServiceResource(
     if (!includeInternalDocuments) {
         const approvedCategories = new Set(
             requestDocuments
-                .filter(d => (d.status === 'approved' || d.status === 'verified'))
-                .map(d => d.documentCategory)
+                .filter((document: any) => document.status === 'approved' || document.status === 'verified')
+                .map((document: any) => document.documentCategory)
                 .filter(Boolean)
         );
 
-        requestDocuments = requestDocuments.filter(doc => {
+        requestDocuments = requestDocuments.filter((doc: any) => {
             const status = String(doc.status || '').toLowerCase();
             const category = String(doc.documentCategory || '').toLowerCase();
 
@@ -187,11 +198,11 @@ export function toUserServiceResource(
     const documentMap = includeInternalDocuments
         ? userService.documents
         : Object.fromEntries(
-              requestDocuments.map((document) => [
+              requestDocuments.map((document: any) => [
                   document.documentName ||
                       document.documentType ||
                       document.fileName,
-                  document.fileUrl,
+                  document.filePath ?? document.fileUrl ?? null,
               ]),
           );
 
