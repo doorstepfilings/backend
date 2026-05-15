@@ -1,60 +1,76 @@
 import type { Prisma } from '@prisma/client';
+import {
+  getPaidPaymentStatusValues,
+  HIDDEN_USER_SERVICE_STATUSES,
+  normalizePaymentStatus,
+  PAYMENT_STATUS,
+  USER_SERVICE_PAYMENT_PENDING_STATUS,
+} from './payment-status';
 
 export const REVIEW_QUEUE_APPLICATION_STATUSES = [
-    'pending',
-    'applied',
-    'paid',
-    'under_review',
-    'update_required',
-    'in_progress',
-    'submitted_to_ca',
-    'document_collection',
+  'pending',
+  'applied',
+  'paid',
+  'under_review',
+  'update_required',
+  'in_progress',
+  'submitted_to_ca',
+  'document_collection',
 ] as const;
 
 function normalizeStatus(value: string | null | undefined) {
-    return typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
 export function buildAdminApplicationWhere(
-    status?: string,
+  status?: string,
 ): Prisma.UserServiceWhereInput {
-    const normalizedStatus = normalizeStatus(status);
+  const normalizedStatus = normalizeStatus(status);
 
-    if (!normalizedStatus || normalizedStatus === 'all') {
-        return { status: { not: 'in_cart' } };
-    }
+  if (!normalizedStatus || normalizedStatus === 'all') {
+    return { status: { notIn: [...HIDDEN_USER_SERVICE_STATUSES] } };
+  }
 
-    if (
-        normalizedStatus === 'pending' ||
-        normalizedStatus === 'active' ||
-        normalizedStatus === 'review'
-    ) {
-        return {
-            status: {
-                in: [...REVIEW_QUEUE_APPLICATION_STATUSES],
-            },
-        };
-    }
+  if (
+    normalizedStatus === USER_SERVICE_PAYMENT_PENDING_STATUS ||
+    normalizedStatus === 'unpaid'
+  ) {
+    return {
+      status: USER_SERVICE_PAYMENT_PENDING_STATUS,
+    };
+  }
 
-    if (normalizedStatus === 'processing') {
-        return { status: 'in_progress' };
-    }
+  if (
+    normalizedStatus === 'pending' ||
+    normalizedStatus === 'active' ||
+    normalizedStatus === 'review'
+  ) {
+    return {
+      status: {
+        in: [...REVIEW_QUEUE_APPLICATION_STATUSES],
+      },
+    };
+  }
 
-    return { status: normalizedStatus };
+  if (normalizedStatus === 'processing') {
+    return { status: 'in_progress' };
+  }
+
+  return { status: normalizedStatus };
 }
 
 export function normalizeLegacyUserServicePaymentStatus(
-    status: string | null | undefined,
+  status: string | null | undefined,
 ) {
-    const normalizedStatus = normalizeStatus(status);
+  const normalizedStatus = normalizePaymentStatus(status);
 
-    if (!normalizedStatus) {
-        return 'pending';
-    }
+  if (!normalizedStatus) {
+    return PAYMENT_STATUS.CREATED;
+  }
 
-    if (normalizedStatus === 'paid') {
-        return 'success';
-    }
+  if (getPaidPaymentStatusValues().includes(normalizedStatus as any)) {
+    return PAYMENT_STATUS.PAID;
+  }
 
-    return normalizedStatus;
+  return normalizedStatus;
 }

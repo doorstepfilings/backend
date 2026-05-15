@@ -151,7 +151,7 @@ model UserService {
   accountantId        Int?      @map("accountant_id")
   applicationUniqueId String?   @unique @map("application_unique_id") @db.VarChar(191)
   status              String    @default("draft") @db.VarChar(50)
-  paymentStatus       String    @default("pending") @map("payment_status") @db.VarChar(50)
+  paymentStatus       String    @default("CREATED") @map("payment_status") @db.VarChar(50)
   formData            Json?     @map("form_data")
   documents           Json?
   amount              Decimal?  @db.Decimal(10, 2)
@@ -220,14 +220,14 @@ model Payment {
   id                          Int      @id @default(autoincrement())
   userId                      Int      @map("user_id")
   userServiceId               Int?     @map("user_service_id")
-  paymentProviderOrderId      String?  @map("payment_provider_order_id") @db.VarChar(191)
-  paymentProviderTransactionId String? @map("payment_provider_transaction_id") @db.VarChar(191)
+  paymentProviderOrderId      String?  @unique(map: "payments_payment_provider_order_id_key") @map("payment_provider_order_id") @db.VarChar(191)
+  paymentProviderTransactionId String? @unique(map: "payments_payment_provider_transaction_id_key") @map("payment_provider_transaction_id") @db.VarChar(191)
   paymentProvider             String   @default("razorpay") @map("payment_provider") @db.VarChar(255)
   paymentProviderStatus       String?  @map("payment_provider_status") @db.VarChar(255)
   amount                      Decimal  @db.Decimal(10, 2)
   currency                    String   @default("INR") @db.VarChar(10)
-  status                      String   @default("pending") @db.VarChar(50)
-  paymentStatus               String   @default("pending") @map("payment_status") @db.VarChar(50)
+  status                      String   @default("CREATED") @db.VarChar(50)
+  paymentStatus               String   @default("CREATED") @map("payment_status") @db.VarChar(50)
   paymentMethod               String?  @map("payment_method") @db.VarChar(50)
   orderUniqueId               String?  @unique @map("order_unique_id") @db.VarChar(191)
   invoiceUniqueId             String?  @unique @map("invoice_unique_id") @db.VarChar(191)
@@ -242,8 +242,6 @@ model Payment {
   user                        User        @relation(fields: [userId], references: [id])
   userService                 UserService? @relation(fields: [userServiceId], references: [id])
 
-  @@index([paymentProviderOrderId], map: "payments_provider_order_idx")
-  @@index([paymentProviderTransactionId], map: "payments_provider_txn_idx")
   @@index([userId, createdAt], map: "payments_user_created_at_idx")
   @@index([userId, status, createdAt], map: "payments_user_status_created_at_idx")
   @@index([userServiceId, status], map: "payments_user_service_status_idx")
@@ -269,4 +267,3 @@ model MediaAsset {
   @@index([uploadedById, createdAt], map: "media_assets_uploaded_by_created_at_idx")
   @@map("media_assets")
 }
-
