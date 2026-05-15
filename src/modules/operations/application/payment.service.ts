@@ -85,12 +85,6 @@ export class PaymentService {
       throw new NotFoundException('User service not found');
     }
 
-    if (userService.status === 'in_cart') {
-      throw new BadRequestException(
-        'Cart services must be paid through the cart checkout',
-      );
-    }
-
     if (isPaidPaymentStatus(userService.paymentStatus)) {
       throw new BadRequestException('This service has already been paid for');
     }
@@ -615,7 +609,7 @@ export class PaymentService {
     await this.syncRelatedUserServicesAfterSuccessfulPayment(hydratedPayment);
 
     if (transitionedToPaid.count > 0) {
-      await this.sendPaymentSuccessNotification(hydratedPayment);
+      this.queuePaymentSuccessNotification(hydratedPayment);
     }
 
     return this.buildPaymentVerificationResponse(hydratedPayment);
@@ -719,6 +713,17 @@ export class PaymentService {
       service_ids: this.resolvePaymentServiceIds(payment).map(String),
       success: true,
     };
+  }
+
+  private queuePaymentSuccessNotification(payment: any) {
+    void this.sendPaymentSuccessNotification(payment).catch((error) => {
+      this.logger.error(
+        `Failed to complete async payment success follow-up for payment ${
+          payment?.id ?? 'unknown'
+        }: ${(error as Error).message}`,
+        (error as Error).stack,
+      );
+    });
   }
 
   private async sendPaymentSuccessNotification(payment: any) {
@@ -883,7 +888,8 @@ export class PaymentService {
 
     const context = {
       company: {
-        name: 'DoorstepFilings',
+        name: 'FINTAXHUB INDIA PRIVATE LIMITED',
+        displayName: 'DoorstepFilings',
         addressLine1: 'A/639, Sun WestBank',
         addressLine2:
           'Nr. Shiv Cinema, Ashram Road, Navrangpura, Ahmedabad - 380009',

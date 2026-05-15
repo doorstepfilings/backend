@@ -16,6 +16,8 @@ jest.mock('razorpay', () =>
   })),
 );
 
+const flushAsyncWork = () => new Promise((resolve) => setImmediate(resolve));
+
 describe('PaymentService', () => {
   let configService: ConfigService;
   let prismaMock: any;
@@ -124,6 +126,42 @@ describe('PaymentService', () => {
     });
   });
 
+  it('allows single-service checkout for items that are still in cart', async () => {
+    prismaMock.userService.findFirst.mockResolvedValue({
+      amount: '500.00',
+      id: 77,
+      paymentStatus: PAYMENT_STATUS.CREATED,
+      service: { name: 'Company Registration' },
+      status: 'in_cart',
+      user: { id: 1, email: 'test@example.com' },
+      userId: 1,
+    });
+    prismaMock.payment.findFirst.mockResolvedValue(null);
+    createOrderMock.mockResolvedValue({ id: 'order_single_in_cart_123' });
+
+    const result = await service.createOrder(1, 77);
+
+    expect(createOrderMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: 59000,
+        receipt: 'receipt_77',
+      }),
+    );
+    expect(prismaMock.userService.update).toHaveBeenCalledWith({
+      where: { id: 77 },
+      data: {
+        paymentStatus: PAYMENT_STATUS.CREATED,
+        status: 'payment_pending',
+      },
+    });
+    expect(result).toMatchObject({
+      amount: 590,
+      amount_paise: 59000,
+      razorpay_order_id: 'order_single_in_cart_123',
+      service_ids: ['77'],
+    });
+  });
+
   it('reuses a cart payment draft instead of creating duplicate orders on retry', async () => {
     prismaMock.userService.findMany.mockResolvedValue([
       { amount: '100.00', id: 11, service: { name: 'GST' } },
@@ -220,6 +258,7 @@ describe('PaymentService', () => {
       razorpay_payment_id: 'payment_xyz',
       razorpay_signature: signature,
     });
+    await flushAsyncWork();
 
     expect(prismaMock.payment.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -241,6 +280,10 @@ describe('PaymentService', () => {
     expect(pdfService.generatePdf).toHaveBeenCalledWith(
       'invoice',
       expect.objectContaining({
+        company: expect.objectContaining({
+          displayName: 'DoorstepFilings',
+          name: 'FINTAXHUB INDIA PRIVATE LIMITED',
+        }),
         invoiceId: 'INV-17',
         orderId: 'ORD-17',
         user: expect.objectContaining({
@@ -256,6 +299,82 @@ describe('PaymentService', () => {
       service_ids: ['5'],
       success: true,
     });
+  });
+
+  it('returns payment verification success without waiting for email delivery', async () => {
+    const signature = crypto
+      .createHmac('sha256', 'secret')
+      .update('order_fast|payment_fast')
+      .digest('hex');
+
+    const paymentRecord = {
+      id: 27,
+      invoiceUniqueId: 'INV-27',
+      orderUniqueId: 'ORD-27',
+      paymentProviderOrderId: 'order_fast',
+      paymentProviderTransactionId: null,
+      paymentStatus: PAYMENT_STATUS.CREATED,
+      status: PAYMENT_STATUS.CREATED,
+      userServiceId: 15,
+      notes: { user_service_id: 15 },
+    };
+
+    const hydratedPayment = {
+      ...paymentRecord,
+      amount: 236,
+      createdAt: new Date('2026-05-15T08:30:00.000Z'),
+      currency: 'INR',
+      paymentProvider: 'razorpay',
+      paymentProviderTransactionId: 'payment_fast',
+      paymentStatus: PAYMENT_STATUS.PAID,
+      status: PAYMENT_STATUS.PAID,
+      user: {
+        email: 'fast@example.com',
+        mobileNumber: '9999999999',
+        name: 'Fast Buyer',
+      },
+      userService: {
+        amount: '200.00',
+        formData: { pricing_plan: 'Pro' },
+        id: 15,
+        service: { name: 'GST Registration' },
+      },
+    };
+
+    prismaMock.payment.findFirst
+      .mockResolvedValueOnce(paymentRecord)
+      .mockResolvedValueOnce(null);
+    prismaMock.payment.findUnique.mockResolvedValue(hydratedPayment);
+    prismaMock.userService.findMany.mockResolvedValue([
+      {
+        amount: '200.00',
+        formData: { pricing_plan: 'Pro' },
+        id: 15,
+        service: { name: 'GST Registration' },
+      },
+    ]);
+    (
+      notificationService.sendPaymentSuccessNotification as jest.Mock
+    ).mockReturnValue(new Promise(() => {}));
+
+    const result = await service.verifyPayment(1, {
+      payment_id: 27,
+      razorpay_order_id: 'order_fast',
+      razorpay_payment_id: 'payment_fast',
+      razorpay_signature: signature,
+    });
+    await flushAsyncWork();
+
+    expect(result).toEqual({
+      invoice_unique_id: 'INV-27',
+      order_unique_id: 'ORD-27',
+      payment_id: 27,
+      service_ids: ['15'],
+      success: true,
+    });
+    expect(
+      notificationService.sendPaymentSuccessNotification as jest.Mock,
+    ).toHaveBeenCalled();
   });
 
   it('returns only paid orders in the dashboard order resource', async () => {

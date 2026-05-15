@@ -68,6 +68,13 @@
             letter-spacing: -0.02em;
         }
 
+        .company-brand {
+            font-size: 11px;
+            font-weight: 700;
+            color: #475569;
+            margin: 0 0 8px 0;
+        }
+
         .invoice-title {
             font-size: 24px;
             font-weight: 800;
@@ -239,7 +246,8 @@
         <table class="header-table">
             <tr>
                 <td>
-                    <div class="company-name">DoorstepFilings</div>
+                    <div class="company-name">{{ company.name }}</div>
+                    {{#if company.displayName}}<div class="company-brand">Brand: {{ company.displayName }}</div>{{/if}}
                     <div class="header-text">
                         {{ company.addressLine1 }}<br>
                         {{ company.addressLine2 }}<br>

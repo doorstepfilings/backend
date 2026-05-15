@@ -46,12 +46,9 @@ export class UserServicesService {
   ) {}
 
   async getMyServices(userId: number) {
+    // Keep newly added cart and payment-pending services visible to the user.
     const services = (await this.prisma.userService.findMany({
       where: {
-        paymentStatus: {
-          in: getPaidPaymentStatusValues(),
-        },
-        status: { notIn: [...HIDDEN_USER_SERVICE_STATUSES] },
         userId,
       },
       include: {
@@ -128,35 +125,6 @@ export class UserServicesService {
       }
     }
 
-    // Check if already applied
-    const existing = await this.prisma.userService.findFirst({
-      where: {
-        userId,
-        serviceId: dto.service_id,
-        paymentStatus: {
-          in: getPaidPaymentStatusValues(),
-        },
-        status: {
-          in: [
-            'applied',
-            'paid',
-            'under_review',
-            'update_required',
-            'in_progress',
-            'submitted_to_ca',
-            'approved',
-            'completed',
-          ],
-        },
-      },
-    });
-
-    if (existing) {
-      throw new BadRequestException(
-        'You have already applied for this service',
-      );
-    }
-
     // Resolve amount (if not already set in cart)
     let amount: Prisma.Decimal | string | number | null = service.price;
     if (formData.pricing_plan && Array.isArray(service.pricingPlans)) {
@@ -168,7 +136,8 @@ export class UserServicesService {
       }
     }
 
-    // Update or create
+    // Reuse only an unpaid draft-like request. Paid/completed requests must stay
+    // untouched so users can submit the same service again without losing history.
     let userService = await this.prisma.userService.findFirst({
       where: {
         userId,
