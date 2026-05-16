@@ -20,6 +20,14 @@ const PAID_PAYMENT_STATUS_VALUES = [
   'success',
 ] as const;
 
+const ACTIVE_PAYMENT_STATUS_VALUES = [
+  PAYMENT_STATUS.CREATED,
+  PAYMENT_STATUS.PENDING,
+  'authorized',
+  'created',
+  'pending',
+] as const;
+
 const RETRYABLE_PAYMENT_STATUS_VALUES = [
   PAYMENT_STATUS.CREATED,
   PAYMENT_STATUS.PENDING,
@@ -35,6 +43,10 @@ const RETRYABLE_PAYMENT_STATUS_VALUES = [
 
 export function getPaidPaymentStatusValues() {
   return [...PAID_PAYMENT_STATUS_VALUES];
+}
+
+export function getActivePaymentStatusValues() {
+  return [...ACTIVE_PAYMENT_STATUS_VALUES];
 }
 
 export function getRetryablePaymentStatusValues() {

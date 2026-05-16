@@ -246,8 +246,8 @@
         <table class="header-table">
             <tr>
                 <td>
-                    <div class="company-name">{{ company.name }}</div>
-                    {{#if company.displayName}}<div class="company-brand">Brand: {{ company.displayName }}</div>{{/if}}
+                    <div class="company-name">{{ company.displayName }}</div>
+                    {{#if company.name}}<div class="company-brand">{{ company.name }}</div>{{/if}}
                     <div class="header-text">
                         {{ company.addressLine1 }}<br>
                         {{ company.addressLine2 }}<br>
@@ -270,7 +270,7 @@
 
         <table class="split-table">
             <tr>
-                <td style="padding-right: 10px;">
+                <td>
                     <div class="card">
                         <div class="card-header">Billed To</div>
                         <div class="card-body">
@@ -278,17 +278,6 @@
                             {{#if user.address}}{{ user.address }}<br>{{/if}}
                             {{#if user.email}}{{ user.email }}<br>{{/if}}
                             {{#if user.phone}}{{ user.phone }}{{/if}}
-                        </div>
-                    </div>
-                </td>
-                <td style="padding-left: 10px;">
-                    <div class="card">
-                        <div class="card-header">Payment Details</div>
-                        <div class="card-body">
-                            <div class="card-body-title">{{ payment.provider }}</div>
-                            Provider Order: {{ payment.providerOrderId }}<br>
-                            Transaction ID: {{ payment.transactionId }}<br>
-                            Status: {{ payment.status }}
                         </div>
                     </div>
                 </td>

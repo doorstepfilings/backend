@@ -11,8 +11,8 @@ import { UniqueIDGenerator } from '../../../shared/utils/unique-id.generator';
 import { NotificationService } from '../../communication/notification.service';
 import { PdfService } from '../../../shared/services/pdf.service';
 import {
+  getActivePaymentStatusValues,
   getPaidPaymentStatusValues,
-  getRetryablePaymentStatusValues,
   isPaidPaymentStatus,
   isSettledPaymentRecord,
   normalizePaymentStatus,
@@ -46,6 +46,7 @@ type PaymentOrderResource = {
   currency: string;
   gst_amount: number;
   id: number;
+  invoice_available: boolean;
   invoice_unique_id: string | null;
   items: PaymentOrderItemResource[];
   order_unique_id: string | null;
@@ -104,15 +105,18 @@ export class PaymentService {
     try {
       const order = await this.createRazorpayOrder(options);
 
-      let payment = await this.prisma.payment.findFirst({
+      await this.prisma.payment.updateMany({
         where: {
+          userId,
           userServiceId: userService.id,
           paymentStatus: {
-            in: getRetryablePaymentStatusValues(),
+            in: getActivePaymentStatusValues(),
           },
         },
-        orderBy: {
-          updatedAt: 'desc',
+        data: {
+          paymentProviderStatus: 'cancelled',
+          paymentStatus: PAYMENT_STATUS.CANCELLED,
+          status: PAYMENT_STATUS.CANCELLED,
         },
       });
 
@@ -120,7 +124,6 @@ export class PaymentService {
         amount: totals.grandTotal,
         currency: 'INR',
         notes: {
-          ...((payment?.notes as object) || {}),
           user_service_id: userService.id,
         } as any,
         paymentProviderOrderId: order.id,
@@ -130,22 +133,15 @@ export class PaymentService {
         status: PAYMENT_STATUS.CREATED,
       };
 
-      if (payment) {
-        payment = await this.prisma.payment.update({
-          where: { id: payment.id },
-          data: paymentDraftData,
-        });
-      } else {
-        payment = await this.prisma.payment.create({
-          data: {
-            userId: userService.userId,
-            userServiceId: userService.id,
-            orderUniqueId: UniqueIDGenerator.generateOrderID(),
-            invoiceUniqueId: UniqueIDGenerator.generateInvoiceID(),
-            ...paymentDraftData,
-          },
-        });
-      }
+      const payment = await this.prisma.payment.create({
+        data: {
+          userId: userService.userId,
+          userServiceId: userService.id,
+          orderUniqueId: UniqueIDGenerator.generateOrderID(),
+          invoiceUniqueId: UniqueIDGenerator.generateInvoiceID(),
+          ...paymentDraftData,
+        },
+      });
 
       await this.prisma.userService.update({
         where: { id: userService.id },
@@ -207,36 +203,20 @@ export class PaymentService {
     try {
       const order = await this.createRazorpayOrder(options);
 
-      let payment = await this.prisma.payment.findFirst({
+      await this.prisma.payment.updateMany({
         where: {
           userId,
           userServiceId: null,
           paymentStatus: {
-            in: getRetryablePaymentStatusValues(),
+            in: getActivePaymentStatusValues(),
           },
         },
-        orderBy: {
-          updatedAt: 'desc',
+        data: {
+          paymentProviderStatus: 'cancelled',
+          paymentStatus: PAYMENT_STATUS.CANCELLED,
+          status: PAYMENT_STATUS.CANCELLED,
         },
       });
-
-      if (payment) {
-        await this.prisma.payment.updateMany({
-          where: {
-            id: { not: payment.id },
-            userId,
-            userServiceId: null,
-            paymentStatus: {
-              in: getRetryablePaymentStatusValues(),
-            },
-          },
-          data: {
-            paymentProviderStatus: 'cancelled',
-            paymentStatus: PAYMENT_STATUS.CANCELLED,
-            status: PAYMENT_STATUS.CANCELLED,
-          },
-        });
-      }
 
       const paymentDraftData = {
         amount: totals.grandTotal,
@@ -253,21 +233,14 @@ export class PaymentService {
         status: PAYMENT_STATUS.CREATED,
       };
 
-      if (payment) {
-        payment = await this.prisma.payment.update({
-          where: { id: payment.id },
-          data: paymentDraftData,
-        });
-      } else {
-        payment = await this.prisma.payment.create({
-          data: {
-            userId,
-            orderUniqueId: UniqueIDGenerator.generateOrderID(),
-            invoiceUniqueId: UniqueIDGenerator.generateInvoiceID(),
-            ...paymentDraftData,
-          },
-        });
-      }
+      const payment = await this.prisma.payment.create({
+        data: {
+          userId,
+          orderUniqueId: UniqueIDGenerator.generateOrderID(),
+          invoiceUniqueId: UniqueIDGenerator.generateInvoiceID(),
+          ...paymentDraftData,
+        },
+      });
 
       await this.prisma.userService.updateMany({
         where: { id: { in: items.map((item) => item.id) } },
@@ -791,7 +764,12 @@ export class PaymentService {
           },
           {
             paymentStatus: {
-              in: getPaidPaymentStatusValues(),
+              notIn: getActivePaymentStatusValues(),
+            },
+          },
+          {
+            status: {
+              notIn: getActivePaymentStatusValues(),
             },
           },
         ],
@@ -1030,6 +1008,8 @@ export class PaymentService {
       currency: payment.currency,
       gst_amount: gstAmount,
       id: payment.id,
+      invoice_available:
+        this.isPaymentSettled(payment) && Boolean(payment.invoiceUniqueId),
       invoice_unique_id: payment.invoiceUniqueId,
       items: services.map((service) => ({
         application_unique_id: service.applicationUniqueId,

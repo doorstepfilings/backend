@@ -162,17 +162,52 @@ describe('PaymentService', () => {
     });
   });
 
-  it('reuses a cart payment draft instead of creating duplicate orders on retry', async () => {
+  it('creates a fresh single-service payment attempt instead of overwriting prior attempts', async () => {
+    prismaMock.userService.findFirst.mockResolvedValue({
+      amount: '1000.00',
+      id: 42,
+      paymentStatus: PAYMENT_STATUS.FAILED,
+      service: { name: 'GST Registration' },
+      status: 'payment_pending',
+      user: { id: 1, email: 'test@example.com' },
+      userId: 1,
+    });
+    createOrderMock.mockResolvedValue({ id: 'order_single_retry_123' });
+
+    await service.createOrder(1, 42);
+
+    expect(prismaMock.payment.updateMany).toHaveBeenCalledWith({
+      where: {
+        userId: 1,
+        userServiceId: 42,
+        paymentStatus: {
+          in: expect.arrayContaining([PAYMENT_STATUS.CREATED, PAYMENT_STATUS.PENDING]),
+        },
+      },
+      data: {
+        paymentProviderStatus: 'cancelled',
+        paymentStatus: PAYMENT_STATUS.CANCELLED,
+        status: PAYMENT_STATUS.CANCELLED,
+      },
+    });
+    expect(prismaMock.payment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          paymentProviderOrderId: 'order_single_retry_123',
+          paymentStatus: PAYMENT_STATUS.CREATED,
+          status: PAYMENT_STATUS.CREATED,
+          userServiceId: 42,
+        }),
+      }),
+    );
+    expect(prismaMock.payment.update).not.toHaveBeenCalled();
+  });
+
+  it('creates a new cart payment draft and preserves prior attempts on retry', async () => {
     prismaMock.userService.findMany.mockResolvedValue([
       { amount: '100.00', id: 11, service: { name: 'GST' } },
       { amount: '200.00', id: 12, service: { name: 'ITR' } },
     ]);
-    prismaMock.payment.findFirst.mockResolvedValue({
-      id: 55,
-      orderUniqueId: 'ORD-55',
-      invoiceUniqueId: 'INV-55',
-      notes: { cart_item_ids: [11, 12] },
-    });
     createOrderMock.mockResolvedValue({ id: 'order_cart_123' });
 
     const result = await service.createCartOrder(5);
@@ -180,15 +215,31 @@ describe('PaymentService', () => {
 
     expect(lastOrderRequest.amount).toBe(35400);
     expect(lastOrderRequest.notes.cart_item_ids).toEqual([11, 12]);
-    expect(prismaMock.payment.update).toHaveBeenCalledWith(
+    expect(prismaMock.payment.updateMany).toHaveBeenCalledWith({
+      where: {
+        userId: 5,
+        userServiceId: null,
+        paymentStatus: {
+          in: expect.arrayContaining([PAYMENT_STATUS.CREATED, PAYMENT_STATUS.PENDING]),
+        },
+      },
+      data: {
+        paymentProviderStatus: 'cancelled',
+        paymentStatus: PAYMENT_STATUS.CANCELLED,
+        status: PAYMENT_STATUS.CANCELLED,
+      },
+    });
+    expect(prismaMock.payment.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 55 },
         data: expect.objectContaining({
           paymentProviderOrderId: 'order_cart_123',
           paymentStatus: PAYMENT_STATUS.CREATED,
+          status: PAYMENT_STATUS.CREATED,
+          userId: 5,
         }),
       }),
     );
+    expect(prismaMock.payment.update).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       amount: 354,
       amount_paise: 35400,
@@ -377,13 +428,14 @@ describe('PaymentService', () => {
     ).toHaveBeenCalled();
   });
 
-  it('returns only paid orders in the dashboard order resource', async () => {
-    const createdAt = new Date('2026-05-04T10:00:00.000Z');
+  it('returns successful and failed payment attempts in the dashboard order history', async () => {
+    const paidCreatedAt = new Date('2026-05-04T10:00:00.000Z');
+    const failedCreatedAt = new Date('2026-05-03T08:15:00.000Z');
     prismaMock.payment.findMany.mockResolvedValue([
       {
         id: 91,
         amount: 354,
-        createdAt,
+        createdAt: paidCreatedAt,
         currency: 'INR',
         invoiceUniqueId: 'INV-91',
         notes: { cart_item_ids: [11, 12] },
@@ -395,6 +447,22 @@ describe('PaymentService', () => {
         status: PAYMENT_STATUS.PAID,
         userService: null,
         userServiceId: null,
+      },
+      {
+        id: 92,
+        amount: 118,
+        createdAt: failedCreatedAt,
+        currency: 'INR',
+        invoiceUniqueId: 'INV-92',
+        notes: { user_service_id: 13 },
+        orderUniqueId: 'ORD-92',
+        paymentProvider: 'razorpay',
+        paymentProviderOrderId: 'order_single_456',
+        paymentProviderTransactionId: null,
+        paymentStatus: PAYMENT_STATUS.FAILED,
+        status: PAYMENT_STATUS.FAILED,
+        userService: null,
+        userServiceId: 13,
       },
     ]);
     prismaMock.userService.findMany.mockResolvedValue([
@@ -414,6 +482,14 @@ describe('PaymentService', () => {
         serviceId: 202,
         status: 'paid',
       },
+      {
+        amount: '100.00',
+        applicationUniqueId: 'APP-13',
+        id: 13,
+        service: { name: 'GST Registration' },
+        serviceId: 201,
+        status: 'payment_pending',
+      },
     ]);
 
     const result = await service.myOrders(5);
@@ -428,10 +504,11 @@ describe('PaymentService', () => {
     expect(result).toEqual([
       {
         amount: 354,
-        created_at: createdAt,
+        created_at: paidCreatedAt,
         currency: 'INR',
         gst_amount: 54,
         id: 91,
+        invoice_available: true,
         invoice_unique_id: 'INV-91',
         items: [
           {
@@ -458,6 +535,32 @@ describe('PaymentService', () => {
         payment_status: PAYMENT_STATUS.PAID,
         status: PAYMENT_STATUS.PAID,
         subtotal: 300,
+      },
+      {
+        amount: 118,
+        created_at: failedCreatedAt,
+        currency: 'INR',
+        gst_amount: 18,
+        id: 92,
+        invoice_available: false,
+        invoice_unique_id: 'INV-92',
+        items: [
+          {
+            application_unique_id: 'APP-13',
+            id: 13,
+            name: 'GST Registration',
+            price: 100,
+            service_id: 201,
+            status: 'payment_pending',
+          },
+        ],
+        order_unique_id: 'ORD-92',
+        payment_provider: 'razorpay',
+        payment_provider_order_id: 'order_single_456',
+        payment_provider_transaction_id: null,
+        payment_status: PAYMENT_STATUS.FAILED,
+        status: PAYMENT_STATUS.FAILED,
+        subtotal: 100,
       },
     ]);
   });
