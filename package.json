@@ -20,6 +20,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "migrate:deploy": "prisma migrate deploy",
+    "db:fix-engine": "ts-node scripts/fix-database-engine.ts",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "migrate:legacy": "ts-node scripts/migrate-legacy.ts",
     "migrate:verify": "ts-node scripts/verify-legacy-migration.ts",
