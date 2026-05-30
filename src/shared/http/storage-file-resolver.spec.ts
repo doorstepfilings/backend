@@ -2,112 +2,111 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
-    buildStorageRoots,
-    resolveStorageFilePath,
+  buildStorageRoots,
+  resolveStorageFilePath,
 } from './storage-file-resolver';
 
 describe('storage-file-resolver', () => {
-    let tempRoot: string;
+  let tempRoot: string;
 
-    afterEach(() => {
-        if (tempRoot) {
-            fs.rmSync(tempRoot, {
-                recursive: true,
-                force: true,
-            });
-        }
+  afterEach(() => {
+    if (tempRoot) {
+      fs.rmSync(tempRoot, {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it('prefers the current storage root when the file exists there', () => {
+    tempRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'doorstep-storage-current-'),
+    );
+    const currentStorageRoot = path.join(tempRoot, 'current');
+    const legacyStorageRoot = path.join(tempRoot, 'legacy');
+    const requestedPath = '/service_documents/4/9/invoice.pdf';
+    const currentFilePath = path.join(
+      currentStorageRoot,
+      'service_documents',
+      '4',
+      '9',
+      'invoice.pdf',
+    );
+
+    fs.mkdirSync(path.dirname(currentFilePath), { recursive: true });
+    fs.writeFileSync(currentFilePath, 'current file');
+    fs.mkdirSync(path.join(legacyStorageRoot, 'service_documents', '4', '9'), {
+      recursive: true,
     });
+    fs.writeFileSync(
+      path.join(
+        legacyStorageRoot,
+        'service_documents',
+        '4',
+        '9',
+        'invoice.pdf',
+      ),
+      'legacy file',
+    );
 
-    it('prefers the current storage root when the file exists there', () => {
-        tempRoot = fs.mkdtempSync(
-            path.join(os.tmpdir(), 'doorstep-storage-current-'),
-        );
-        const currentStorageRoot = path.join(tempRoot, 'current');
-        const legacyStorageRoot = path.join(tempRoot, 'legacy');
-        const requestedPath = '/service_documents/4/9/invoice.pdf';
-        const currentFilePath = path.join(
-            currentStorageRoot,
-            'service_documents',
-            '4',
-            '9',
-            'invoice.pdf',
-        );
+    const resolvedPath = resolveStorageFilePath(requestedPath, [
+      currentStorageRoot,
+      legacyStorageRoot,
+    ]);
 
-        fs.mkdirSync(path.dirname(currentFilePath), { recursive: true });
-        fs.writeFileSync(currentFilePath, 'current file');
-        fs.mkdirSync(
-            path.join(legacyStorageRoot, 'service_documents', '4', '9'),
-            { recursive: true },
-        );
-        fs.writeFileSync(
-            path.join(
-                legacyStorageRoot,
-                'service_documents',
-                '4',
-                '9',
-                'invoice.pdf',
-            ),
-            'legacy file',
-        );
+    expect(resolvedPath).toBe(currentFilePath);
+  });
 
-        const resolvedPath = resolveStorageFilePath(requestedPath, [
-            currentStorageRoot,
-            legacyStorageRoot,
-        ]);
+  it('falls back to a legacy storage root for migrated files', () => {
+    tempRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'doorstep-storage-legacy-'),
+    );
+    const currentStorageRoot = path.join(tempRoot, 'current');
+    const legacyStorageRoot = path.join(tempRoot, 'legacy');
+    const legacyFilePath = path.join(
+      legacyStorageRoot,
+      'service_documents',
+      '4',
+      '9',
+      'invoice.pdf',
+    );
 
-        expect(resolvedPath).toBe(currentFilePath);
-    });
+    fs.mkdirSync(path.dirname(legacyFilePath), { recursive: true });
+    fs.writeFileSync(legacyFilePath, 'legacy file');
 
-    it('falls back to a legacy storage root for migrated files', () => {
-        tempRoot = fs.mkdtempSync(
-            path.join(os.tmpdir(), 'doorstep-storage-legacy-'),
-        );
-        const currentStorageRoot = path.join(tempRoot, 'current');
-        const legacyStorageRoot = path.join(tempRoot, 'legacy');
-        const legacyFilePath = path.join(
-            legacyStorageRoot,
-            'service_documents',
-            '4',
-            '9',
-            'invoice.pdf',
-        );
+    const resolvedPath = resolveStorageFilePath(
+      '/service_documents/4/9/invoice.pdf',
+      [currentStorageRoot, legacyStorageRoot],
+    );
 
-        fs.mkdirSync(path.dirname(legacyFilePath), { recursive: true });
-        fs.writeFileSync(legacyFilePath, 'legacy file');
+    expect(resolvedPath).toBe(legacyFilePath);
+  });
 
-        const resolvedPath = resolveStorageFilePath(
-            '/service_documents/4/9/invoice.pdf',
-            [currentStorageRoot, legacyStorageRoot],
-        );
+  it('rejects path traversal attempts', () => {
+    tempRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'doorstep-storage-traversal-'),
+    );
 
-        expect(resolvedPath).toBe(legacyFilePath);
-    });
+    const resolvedPath = resolveStorageFilePath('/../.env', [tempRoot]);
 
-    it('rejects path traversal attempts', () => {
-        tempRoot = fs.mkdtempSync(
-            path.join(os.tmpdir(), 'doorstep-storage-traversal-'),
-        );
+    expect(resolvedPath).toBeNull();
+  });
 
-        const resolvedPath = resolveStorageFilePath('/../.env', [tempRoot]);
+  it('deduplicates configured legacy roots', () => {
+    tempRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'doorstep-storage-roots-'),
+    );
+    const currentStorageRoot = path.join(tempRoot, 'current');
+    const legacyStorageRoot = path.join(tempRoot, 'legacy');
 
-        expect(resolvedPath).toBeNull();
-    });
+    const storageRoots = buildStorageRoots(
+      `${legacyStorageRoot};${legacyStorageRoot}`,
+      currentStorageRoot,
+    );
 
-    it('deduplicates configured legacy roots', () => {
-        tempRoot = fs.mkdtempSync(
-            path.join(os.tmpdir(), 'doorstep-storage-roots-'),
-        );
-        const currentStorageRoot = path.join(tempRoot, 'current');
-        const legacyStorageRoot = path.join(tempRoot, 'legacy');
-
-        const storageRoots = buildStorageRoots(
-            `${legacyStorageRoot};${legacyStorageRoot}`,
-            currentStorageRoot,
-        );
-
-        expect(storageRoots[0]).toBe(currentStorageRoot);
-        expect(
-            storageRoots.filter((storageRoot) => storageRoot === legacyStorageRoot),
-        ).toHaveLength(1);
-    });
+    expect(storageRoots[0]).toBe(currentStorageRoot);
+    expect(
+      storageRoots.filter((storageRoot) => storageRoot === legacyStorageRoot),
+    ).toHaveLength(1);
+  });
 });

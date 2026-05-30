@@ -42,6 +42,10 @@ class EnvironmentVariables {
   FRONTEND_URL!: string;
 
   @IsString()
+  @IsOptional()
+  SOCIAL_AUTH_SHARED_SECRET?: string;
+
+  @IsString()
   @IsNotEmpty()
   DB_HOST!: string;
 

@@ -24,6 +24,7 @@ npm run lint
 npm run typecheck
 npm run test
 npm run test:e2e
+npm run migrate:deploy
 npm run seed:dev
 npm run migrate:legacy
 npm run migrate:verify
@@ -43,6 +44,10 @@ npx prisma migrate dev --name <change-name>
 # staging/production
 npx prisma migrate deploy
 ```
+
+Production bootstrap:
+- `npm run start:prod` runs `prisma migrate deploy` before loading `dist/src/main`.
+- PM2 uses the same bootstrap script, and non-primary cluster workers wait until the latest local migration is present in `_prisma_migrations` before starting the app.
 
 Fresh Prisma-managed database rollout:
 

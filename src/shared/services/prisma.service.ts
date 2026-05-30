@@ -4,11 +4,11 @@ import { createPrismaClientOptions } from './prisma-client-options';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit {
-    constructor() {
-        super(createPrismaClientOptions());
-    }
+  constructor() {
+    super(createPrismaClientOptions());
+  }
 
-    async onModuleInit() {
-        await this.$connect();
-    }
+  async onModuleInit() {
+    await this.$connect();
+  }
 }

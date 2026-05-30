@@ -4,18 +4,17 @@ import type { AppEnvironment } from '../../../../config/environment';
 
 @Injectable()
 export class HealthService {
-    constructor(private readonly configService: ConfigService) {}
+  constructor(private readonly configService: ConfigService) {}
 
-    getStatus() {
-        const appEnvironment =
-            this.configService.getOrThrow<AppEnvironment>('app');
+  getStatus() {
+    const appEnvironment = this.configService.getOrThrow<AppEnvironment>('app');
 
-        return {
-            apiPrefix: appEnvironment.apiPrefix,
-            environment: appEnvironment.nodeEnv,
-            service: appEnvironment.appName,
-            status: 'ok',
-            timestamp: new Date().toISOString(),
-        };
-    }
+    return {
+      apiPrefix: appEnvironment.apiPrefix,
+      environment: appEnvironment.nodeEnv,
+      service: appEnvironment.appName,
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+    };
+  }
 }

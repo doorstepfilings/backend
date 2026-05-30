@@ -11,24 +11,24 @@ import { AuthController } from './presentation/http/auth.controller';
 import { ProfileController } from './presentation/http/profile.controller';
 
 @Module({
-    imports: [
-        PassportModule,
-        JwtModule.registerAsync({
-            inject: [ConfigService],
-            useFactory: (configService: ConfigService) => {
-                const auth = configService.getOrThrow<AuthConfig>('auth');
+  imports: [
+    PassportModule,
+    JwtModule.registerAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => {
+        const auth = configService.getOrThrow<AuthConfig>('auth');
 
-                return {
-                    secret: auth.jwtSecret,
-                    signOptions: {
-                        expiresIn: auth.jwtExpiresIn as never,
-                    },
-                };
-            },
-        }),
-    ],
-    controllers: [AuthController, ProfileController],
-    providers: [AuthService, ProfileService, JwtStrategy, JwtAuthGuard],
-    exports: [AuthService, ProfileService, JwtAuthGuard],
+        return {
+          secret: auth.jwtSecret,
+          signOptions: {
+            expiresIn: auth.jwtExpiresIn as never,
+          },
+        };
+      },
+    }),
+  ],
+  controllers: [AuthController, ProfileController],
+  providers: [AuthService, ProfileService, JwtStrategy, JwtAuthGuard],
+  exports: [AuthService, ProfileService, JwtAuthGuard],
 })
 export class IdentityModule {}

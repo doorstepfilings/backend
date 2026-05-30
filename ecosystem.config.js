@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: 'doorstep-backend',
-      script: 'dist/src/main.js',
+      script: 'scripts/start-prod.js',
       instances: 'max',
       exec_mode: 'cluster',
       autorestart: true,

@@ -1,10 +1,11 @@
 import {
-    BadRequestException,
-    Body,
-    Controller,
-    Get,
-    Post,
-    UseGuards,
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Post,
+  UseGuards,
 } from '@nestjs/common';
 import { successResponse } from '../../../../shared/http/api-response';
 import { AuthService } from '../../application/auth.service';
@@ -16,100 +17,111 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginWithMobileDto } from './dto/login-with-mobile.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SendLoginOtpDto } from './dto/send-login-otp.dto';
+import { OauthLoginDto } from './dto/oauth-login.dto';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 
 @Controller('user')
 export class AuthController {
-    constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService) {}
 
-    @Post('login')
-    async login(@Body() loginDto: LoginDto) {
-        const result = await this.authService.login(loginDto);
+  @Post('login')
+  async login(@Body() loginDto: LoginDto) {
+    const result = await this.authService.login(loginDto);
 
-        return successResponse(result, 'Login successful');
+    return successResponse(result, 'Login successful');
+  }
+
+  @Post('register')
+  async register(@Body() registerDto: RegisterDto) {
+    const result = await this.authService.register(registerDto);
+    return successResponse(result, 'Registration successful');
+  }
+
+  @Post('forgot-password')
+  async forgotPassword(@Body() body: ForgotPasswordDto) {
+    const result = await this.authService.forgotPassword(body.email);
+    return successResponse(result, 'Password reset instructions sent');
+  }
+
+  @Post('reset-password')
+  async resetPassword(@Body() body: ResetPasswordDto) {
+    if (body.password !== body.password_confirmation) {
+      throw new BadRequestException('Passwords do not match');
     }
 
-    @Post('register')
-    async register(@Body() registerDto: RegisterDto) {
-        const result = await this.authService.register(registerDto);
-        return successResponse(result, 'Registration successful');
+    const result = await this.authService.resetPassword(
+      body.email,
+      body.token,
+      body.password,
+    );
+    return successResponse(result, 'Password reset successful');
+  }
+
+  @Post('send-otp')
+  async sendOtp(@Body() body: SendOtpDto) {
+    const identifier = body.identifier ?? body.value;
+
+    if (!identifier) {
+      throw new BadRequestException('Identifier is required');
     }
 
-    @Post('forgot-password')
-    async forgotPassword(@Body() body: ForgotPasswordDto) {
-        const result = await this.authService.forgotPassword(body.email);
-        return successResponse(result, 'Password reset instructions sent');
+    const result = await this.authService.sendOtp(identifier);
+    return successResponse(result, 'OTP sent');
+  }
+
+  @Post('verify-otp')
+  async verifyOtp(@Body() body: VerifyOtpDto) {
+    const identifier = body.identifier ?? body.value;
+
+    if (!identifier) {
+      throw new BadRequestException('Identifier is required');
     }
 
-    @Post('reset-password')
-    async resetPassword(@Body() body: ResetPasswordDto) {
-        if (body.password !== body.password_confirmation) {
-            throw new BadRequestException('Passwords do not match');
-        }
+    const otp = body.otp;
+    const result = await this.authService.verifyOtp(identifier, otp);
+    return successResponse(result, 'OTP verified');
+  }
 
-        const result = await this.authService.resetPassword(
-            body.email,
-            body.token,
-            body.password,
-        );
-        return successResponse(result, 'Password reset successful');
-    }
+  @Post('send-login-otp')
+  async sendLoginOtp(@Body() body: SendLoginOtpDto) {
+    const result = await this.authService.sendLoginOtp(body.mobile_number);
+    return successResponse(result, 'OTP sent successfully to your mobile');
+  }
 
-    @Post('send-otp')
-    async sendOtp(@Body() body: SendOtpDto) {
-        const identifier = body.identifier ?? body.value;
+  @Post('login-with-mobile')
+  async loginWithMobile(@Body() body: LoginWithMobileDto) {
+    const result = await this.authService.loginWithMobile(
+      body.mobile_number,
+      body.otp,
+    );
 
-        if (!identifier) {
-            throw new BadRequestException('Identifier is required');
-        }
+    return successResponse(result, 'Login successful');
+  }
 
-        const result = await this.authService.sendOtp(identifier);
-        return successResponse(result, 'OTP sent');
-    }
+  @Post('oauth-login')
+  async oauthLogin(
+    @Body() body: OauthLoginDto,
+    @Headers('x-social-auth-secret') socialAuthSecret?: string,
+  ) {
+    const result = await this.authService.oauthLogin(body, socialAuthSecret);
 
-    @Post('verify-otp')
-    async verifyOtp(@Body() body: VerifyOtpDto) {
-        const identifier = body.identifier ?? body.value;
+    return successResponse(result, 'Login successful');
+  }
 
-        if (!identifier) {
-            throw new BadRequestException('Identifier is required');
-        }
+  @UseGuards(JwtAuthGuard)
+  @Get()
+  async getCurrentUser(@CurrentAuthUser() authUser: { userId: number }) {
+    const user = await this.authService.getCurrentUser(authUser.userId);
 
-        const otp = body.otp;
-        const result = await this.authService.verifyOtp(identifier, otp);
-        return successResponse(result, 'OTP verified');
-    }
+    return successResponse(user, 'Success');
+  }
 
-    @Post('send-login-otp')
-    async sendLoginOtp(@Body() body: SendLoginOtpDto) {
-        const result = await this.authService.sendLoginOtp(body.mobile_number);
-        return successResponse(result, 'OTP sent successfully to your mobile');
-    }
+  @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  logout() {
+    this.authService.logout();
 
-    @Post('login-with-mobile')
-    async loginWithMobile(@Body() body: LoginWithMobileDto) {
-        const result = await this.authService.loginWithMobile(
-            body.mobile_number,
-            body.otp,
-        );
-
-        return successResponse(result, 'Login successful');
-    }
-
-    @UseGuards(JwtAuthGuard)
-    @Get()
-    async getCurrentUser(@CurrentAuthUser() authUser: { userId: number }) {
-        const user = await this.authService.getCurrentUser(authUser.userId);
-
-        return successResponse(user, 'Success');
-    }
-
-    @UseGuards(JwtAuthGuard)
-    @Post('logout')
-    logout() {
-        this.authService.logout();
-
-        return successResponse(null, 'Logged out successfully');
-    }
+    return successResponse(null, 'Logged out successfully');
+  }
 }

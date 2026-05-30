@@ -3,8 +3,8 @@ import { MediaController } from './media.controller';
 import { MediaService } from './media.service';
 
 @Module({
-    controllers: [MediaController],
-    providers: [MediaService],
-    exports: [MediaService], // Other modules can inject MediaService
+  controllers: [MediaController],
+  providers: [MediaService],
+  exports: [MediaService], // Other modules can inject MediaService
 })
 export class MediaModule {}

@@ -24,8 +24,11 @@ model User {
   accountantId        Int?      @map("accountant_id")
   address             String?   @db.VarChar(255)
   city                String?   @db.VarChar(255)
+  district            String?   @db.VarChar(255)
   state               String?   @db.VarChar(255)
   pincode             String?   @db.VarChar(255)
+  landmark            String?   @db.VarChar(255)
+  tokenVersion        Int       @default(1) @map("token_version")
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
@@ -37,7 +40,17 @@ model User {
   userServices        UserService[]
   assignedUserServices UserService[] @relation("AccountantToService")
   payments            Payment[]
+  assignedCrmInquiries CrmInquiry[] @relation("AccountantToCrmInquiry")
+  crmInquiryDocumentsUploaded CrmInquiryDocument[] @relation("UploaderToCrmInquiryDocument")
+  crmInquiryNotesAuthored CrmInquiryNote[] @relation("AuthorToCrmInquiryNote")
+  crmServiceRecommendationsAuthored CrmInquiryServiceRecommendation[] @relation("RecommendedByToCrmServiceRecommendation")
+  crmQuotationsCreated CrmQuotation[] @relation("CreatedByToCrmQuotation")
+  crmInquiryPaymentsCreated CrmInquiryPayment[] @relation("CreatedByToCrmInquiryPayment")
+  crmInquiryStatusHistoryEntries CrmInquiryStatusHistory[] @relation("ActorToCrmInquiryStatusHistory")
   uploadedDocuments   ServiceRequestDocument[]
+  chatMessages        ChatMessage[] @relation("SenderToChatMessage")
+  readChatMessages    ChatMessage[] @relation("ReaderToChatMessage")
+  chatThreadParticipants ChatThreadParticipant[]
 
   @@index([role, createdAt], map: "users_role_created_at_idx")
   @@index([mobileNumber], map: "users_mobile_number_idx")
@@ -99,10 +112,14 @@ model Service {
   requiredDocumentsList Json?            @map("required_documents_list")
   extraDocuments       Json?             @map("extra_documents")
   adminNotes           String?           @map("admin_notes") @db.Text
+  hasCustomWorkflow    Boolean           @default(false) @map("has_custom_workflow")
 
   category             ServiceCategory   @relation(fields: [serviceCategoryId], references: [id])
   documents            ServiceDocument[]
+  serviceWorkflows     ServiceWorkflow[]
   userServices         UserService[]
+  crmInquiryRecommendations CrmInquiryServiceRecommendation[]
+  workflowAuditLogs    WorkflowAuditLog[]
 
   @@index([serviceCategoryId, name], map: "services_category_name_idx")
   @@map("services")
@@ -144,6 +161,219 @@ model Enquiry {
   @@map("enquiries")
 }
 
+enum CrmCustomerType {
+  salaried
+  business_owner
+  professional
+  freelancer
+  company_llp
+}
+
+enum CrmInquiryStage {
+  new_inquiry
+  profile_verification
+  document_verification
+  assigned_to_accountant
+  service_identification
+  quotation_preparation
+  quotation_sent
+  payment_received
+  work_started
+  review
+  completed
+  delivered
+  closed
+}
+
+enum CrmQuotationStatus {
+  draft
+  sent
+  accepted
+  rejected
+  expired
+}
+
+enum CrmPaymentStatus {
+  unpaid
+  partial
+  paid
+  refunded
+}
+
+enum CrmDocumentType {
+  pan_card
+  aadhaar_card
+  gst_certificate
+  form_16
+  financial_statements
+  other_supporting_document
+}
+
+model CrmCustomer {
+  id           Int          @id @default(autoincrement())
+  fullName     String       @map("full_name") @db.VarChar(255)
+  mobileNumber String       @map("mobile_number") @db.VarChar(50)
+  email        String?      @db.VarChar(191)
+  city         String?      @db.VarChar(120)
+  state        String?      @db.VarChar(120)
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  inquiries    CrmInquiry[]
+
+  @@index([mobileNumber], map: "crm_customers_mobile_number_idx")
+  @@index([email], map: "crm_customers_email_idx")
+  @@map("crm_customers")
+}
+
+model CrmInquiry {
+  id                        Int                @id @default(autoincrement())
+  inquiryNumber             String             @unique(map: "crm_inquiries_inquiry_number_key") @map("inquiry_number") @db.VarChar(191)
+  customerId                Int                @map("customer_id")
+  customerType              CrmCustomerType    @map("customer_type")
+  profileData               Json               @map("profile_data")
+  currentStage              CrmInquiryStage    @default(new_inquiry) @map("current_stage")
+  assignedAccountantId      Int?               @map("assigned_accountant_id")
+  profileVerified           Boolean            @default(false) @map("profile_verified")
+  documentsVerified         Boolean            @default(false) @map("documents_verified")
+  quotationStatus           CrmQuotationStatus @default(draft) @map("quotation_status")
+  paymentStatus             CrmPaymentStatus   @default(unpaid) @map("payment_status")
+  serviceIdentificationNotes String?           @map("service_identification_notes") @db.Text
+  createdAt                 DateTime           @default(now()) @map("created_at")
+  updatedAt                 DateTime           @updatedAt @map("updated_at")
+
+  customer                  CrmCustomer        @relation(fields: [customerId], references: [id])
+  assignedAccountant        User?              @relation("AccountantToCrmInquiry", fields: [assignedAccountantId], references: [id])
+  documents                 CrmInquiryDocument[]
+  notes                     CrmInquiryNote[]
+  recommendations           CrmInquiryServiceRecommendation[]
+  quotations                CrmQuotation[]
+  payments                  CrmInquiryPayment[]
+  statusHistory             CrmInquiryStatusHistory[]
+
+  @@index([customerId, createdAt], map: "crm_inquiries_customer_created_at_idx")
+  @@index([currentStage, createdAt], map: "crm_inquiries_stage_created_at_idx")
+  @@index([paymentStatus, createdAt], map: "crm_inquiries_payment_created_at_idx")
+  @@index([assignedAccountantId, createdAt], map: "crm_inquiries_accountant_created_at_idx")
+  @@map("crm_inquiries")
+}
+
+model CrmInquiryDocument {
+  id           Int             @id @default(autoincrement())
+  inquiryId    Int             @map("inquiry_id")
+  uploadedById Int?            @map("uploaded_by_id")
+  documentType CrmDocumentType @map("document_type")
+  fileName     String          @map("file_name") @db.VarChar(255)
+  filePath     String          @map("file_path") @db.VarChar(255)
+  mimeType     String?         @map("mime_type") @db.VarChar(100)
+  fileSize     BigInt?         @map("file_size")
+  notes        String?         @db.Text
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  inquiry      CrmInquiry      @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  uploadedBy   User?           @relation("UploaderToCrmInquiryDocument", fields: [uploadedById], references: [id])
+
+  @@index([inquiryId, createdAt], map: "crm_inquiry_documents_inquiry_created_at_idx")
+  @@index([uploadedById, createdAt], map: "crm_inquiry_documents_uploaded_by_created_at_idx")
+  @@map("crm_inquiry_documents")
+}
+
+model CrmInquiryNote {
+  id         Int        @id @default(autoincrement())
+  inquiryId  Int        @map("inquiry_id")
+  authorId   Int        @map("author_id")
+  note       String     @db.Text
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  inquiry    CrmInquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  author     User       @relation("AuthorToCrmInquiryNote", fields: [authorId], references: [id])
+
+  @@index([inquiryId, createdAt], map: "crm_inquiry_notes_inquiry_created_at_idx")
+  @@index([authorId, createdAt], map: "crm_inquiry_notes_author_created_at_idx")
+  @@map("crm_inquiry_notes")
+}
+
+model CrmInquiryServiceRecommendation {
+  id              Int        @id @default(autoincrement())
+  inquiryId       Int        @map("inquiry_id")
+  serviceId       Int        @map("service_id")
+  recommendedById Int        @map("recommended_by_id")
+  notes           String?    @db.Text
+  quotedAmount    Decimal?   @map("quoted_amount") @db.Decimal(10, 2)
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  inquiry         CrmInquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  service         Service    @relation(fields: [serviceId], references: [id])
+  recommendedBy   User       @relation("RecommendedByToCrmServiceRecommendation", fields: [recommendedById], references: [id])
+
+  @@index([inquiryId, createdAt], map: "crm_inquiry_service_recommendations_inquiry_created_at_idx")
+  @@index([serviceId], map: "crm_inquiry_service_recommendations_service_idx")
+  @@index([recommendedById, createdAt], map: "crm_inquiry_service_recommendations_by_created_at_idx")
+  @@map("crm_inquiry_service_recommendations")
+}
+
+model CrmQuotation {
+  id              Int                @id @default(autoincrement())
+  inquiryId       Int                @map("inquiry_id")
+  quotationNumber String             @unique(map: "crm_quotations_quotation_number_key") @map("quotation_number") @db.VarChar(191)
+  status          CrmQuotationStatus @default(draft)
+  subtotal        Decimal            @db.Decimal(10, 2)
+  taxAmount       Decimal            @map("tax_amount") @db.Decimal(10, 2)
+  totalAmount     Decimal            @map("total_amount") @db.Decimal(10, 2)
+  notes           String?            @db.Text
+  createdById     Int                @map("created_by_id")
+  sentAt          DateTime?          @map("sent_at")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  inquiry         CrmInquiry         @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  createdBy       User               @relation("CreatedByToCrmQuotation", fields: [createdById], references: [id])
+
+  @@index([inquiryId, createdAt], map: "crm_quotations_inquiry_created_at_idx")
+  @@index([createdById, createdAt], map: "crm_quotations_created_by_created_at_idx")
+  @@map("crm_quotations")
+}
+
+model CrmInquiryPayment {
+  id              Int              @id @default(autoincrement())
+  inquiryId       Int              @map("inquiry_id")
+  amount          Decimal          @db.Decimal(10, 2)
+  paymentStatus   CrmPaymentStatus @map("payment_status")
+  paymentMethod   String?          @map("payment_method") @db.VarChar(50)
+  referenceNumber String?          @map("reference_number") @db.VarChar(191)
+  receivedAt      DateTime?        @map("received_at")
+  createdById     Int?             @map("created_by_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  inquiry         CrmInquiry       @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  createdBy       User?            @relation("CreatedByToCrmInquiryPayment", fields: [createdById], references: [id])
+
+  @@index([inquiryId, createdAt], map: "crm_inquiry_payments_inquiry_created_at_idx")
+  @@index([createdById, createdAt], map: "crm_inquiry_payments_created_by_created_at_idx")
+  @@map("crm_inquiry_payments")
+}
+
+model CrmInquiryStatusHistory {
+  id         Int              @id @default(autoincrement())
+  inquiryId  Int              @map("inquiry_id")
+  fromStage  CrmInquiryStage? @map("from_stage")
+  toStage    CrmInquiryStage  @map("to_stage")
+  actorId    Int?             @map("actor_id")
+  note       String?          @db.Text
+  createdAt  DateTime         @default(now()) @map("created_at")
+
+  inquiry    CrmInquiry       @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  actor      User?            @relation("ActorToCrmInquiryStatusHistory", fields: [actorId], references: [id])
+
+  @@index([inquiryId, createdAt], map: "crm_inquiry_status_history_inquiry_created_at_idx")
+  @@index([actorId, createdAt], map: "crm_inquiry_status_history_actor_created_at_idx")
+  @@map("crm_inquiry_status_history")
+}
+
 model UserService {
   id                  Int       @id @default(autoincrement())
   userId              Int       @map("user_id")
@@ -160,21 +390,27 @@ model UserService {
   caNotes             String?   @map("ca_notes") @db.Text
   updateNote          String?   @map("update_note") @db.Text
   rejectionReason     String?   @map("rejection_reason") @db.Text
+  clientMessage       String?   @map("client_message") @db.Text
   verified            Boolean   @default(false)
   certificateUrl      String?   @map("certificate_url") @db.VarChar(255)
+  currentServiceWorkflowId Int?   @map("current_service_workflow_id")
+  currentStageUpdatedAt DateTime? @map("current_stage_updated_at")
   submittedToCaAt     DateTime? @map("submitted_to_ca_at")
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
   user                User      @relation(fields: [userId], references: [id])
   accountant          User?     @relation("AccountantToService", fields: [accountantId], references: [id])
+  currentWorkflow     ServiceWorkflow? @relation("CurrentUserServiceWorkflow", fields: [currentServiceWorkflowId], references: [id])
   service             Service   @relation(fields: [serviceId], references: [id])
   requestDocuments    ServiceRequestDocument[]
   payments            Payment[]
+  chatThread          ChatThread?
 
   @@index([status], map: "user_services_status_idx")
   @@index([paymentStatus], map: "user_services_payment_status_idx")
   @@index([createdAt], map: "user_services_created_at_idx")
+  @@index([currentServiceWorkflowId], map: "user_services_current_service_workflow_idx")
   @@index([userId, status], map: "user_services_user_status_idx")
   @@index([userId, serviceId, status], map: "user_services_user_service_status_idx")
   @@index([userId, paymentStatus], map: "user_services_user_payment_status_idx")
@@ -182,6 +418,83 @@ model UserService {
   @@index([accountantId, status], map: "user_services_accountant_status_idx")
   @@index([accountantId, updatedAt], map: "user_services_accountant_updated_at_idx")
   @@map("user_services")
+}
+
+model Stage {
+  id               Int                @id @default(autoincrement())
+  name             String             @db.VarChar(120)
+  slug             String             @unique(map: "stages_slug_key") @db.VarChar(191)
+  color            String             @default("#1d4ed8") @db.VarChar(32)
+  isActive         Boolean            @default(true) @map("is_active")
+  isDefault        Boolean            @default(false) @map("is_default")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  defaultServiceWorkflows DefaultServiceWorkflow[]
+  serviceWorkflows ServiceWorkflow[]
+  auditLogs        WorkflowAuditLog[]
+
+  @@index([name], map: "stages_name_idx")
+  @@index([isActive, name], map: "stages_active_name_idx")
+  @@map("stages")
+}
+
+model DefaultServiceWorkflow {
+  id        Int      @id @default(autoincrement())
+  stageId   Int      @map("stage_id")
+  position  Int      @default(1)
+  isRequired Boolean @default(true) @map("is_required")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  stage     Stage    @relation(fields: [stageId], references: [id])
+
+  @@unique([stageId], map: "default_service_workflows_stage_key")
+  @@unique([position], map: "default_service_workflows_position_key")
+  @@index([position], map: "default_service_workflows_position_idx")
+  @@map("default_service_workflows")
+}
+
+model ServiceWorkflow {
+  id                  Int                @id @default(autoincrement())
+  serviceId           Int                @map("service_id")
+  stageId             Int                @map("stage_id")
+  position            Int                @default(1)
+  isRequired          Boolean            @default(true) @map("is_required")
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+
+  service             Service            @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  stage               Stage              @relation(fields: [stageId], references: [id])
+  currentUserServices UserService[]      @relation("CurrentUserServiceWorkflow")
+  auditLogs           WorkflowAuditLog[]
+
+  @@unique([serviceId, stageId], map: "service_workflows_service_stage_key")
+  @@unique([serviceId, position], map: "service_workflows_service_position_key")
+  @@index([serviceId, position], map: "service_workflows_service_position_idx")
+  @@index([stageId], map: "service_workflows_stage_idx")
+  @@map("service_workflows")
+}
+
+model WorkflowAuditLog {
+  id                Int               @id @default(autoincrement())
+  serviceId         Int?              @map("service_id")
+  serviceWorkflowId Int?              @map("service_workflow_id")
+  stageId           Int?              @map("stage_id")
+  actorId           Int               @map("actor_id")
+  action            String            @db.VarChar(120)
+  metadata          Json?
+  createdAt         DateTime          @default(now()) @map("created_at")
+
+  service           Service?          @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  serviceWorkflow   ServiceWorkflow?  @relation(fields: [serviceWorkflowId], references: [id], onDelete: SetNull)
+  stage             Stage?            @relation(fields: [stageId], references: [id], onDelete: SetNull)
+
+  @@index([serviceId, createdAt], map: "workflow_audit_logs_service_created_at_idx")
+  @@index([serviceWorkflowId], map: "workflow_audit_logs_workflow_idx")
+  @@index([stageId], map: "workflow_audit_logs_stage_idx")
+  @@index([actorId, createdAt], map: "workflow_audit_logs_actor_created_at_idx")
+  @@map("workflow_audit_logs")
 }
 
 model ServiceRequestDocument {
@@ -267,3 +580,59 @@ model MediaAsset {
   @@index([uploadedById, createdAt], map: "media_assets_uploaded_by_created_at_idx")
   @@map("media_assets")
 }
+
+model ChatThread {
+  id            Int           @id @default(autoincrement())
+  userServiceId Int           @unique(map: "chat_threads_user_service_id_key") @map("user_service_id")
+  status        String        @default("open") @db.VarChar(50)
+  lastMessage   String?       @map("last_message") @db.Text
+  lastMessageAt DateTime?     @map("last_message_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  userService   UserService   @relation(fields: [userServiceId], references: [id], onDelete: Cascade)
+  messages      ChatMessage[]
+  participants  ChatThreadParticipant[]
+
+  @@index([userServiceId], map: "chat_threads_user_service_id_idx")
+  @@index([lastMessageAt], map: "chat_threads_last_message_at_idx")
+  @@map("chat_threads")
+}
+
+model ChatThreadParticipant {
+  id         Int        @id @default(autoincrement())
+  threadId    Int        @map("thread_id")
+  userId      Int        @map("user_id")
+  lastReadAt  DateTime?  @map("last_read_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  thread      ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, userId], map: "chat_thread_participants_thread_user_key")
+  @@index([userId], map: "chat_thread_participants_user_id_idx")
+  @@index([threadId], map: "chat_thread_participants_thread_id_idx")
+  @@map("chat_thread_participants")
+}
+
+model ChatMessage {
+  id         Int        @id @default(autoincrement())
+  threadId   Int        @map("thread_id")
+  senderId   Int        @map("sender_id")
+  message    String     @db.Text
+  type       String     @default("text") @db.VarChar(50)
+  isRead     Boolean    @default(false) @map("is_read")
+  readAt     DateTime?  @map("read_at")
+  readById   Int?       @map("read_by_id")
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  thread     ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender     User       @relation("SenderToChatMessage", fields: [senderId], references: [id], onDelete: Cascade)
+  readBy     User?      @relation("ReaderToChatMessage", fields: [readById], references: [id])
+
+  @@index([threadId, createdAt], map: "chat_messages_thread_created_at_idx")
+  @@index([senderId], map: "chat_messages_sender_id_idx")
+  @@map("chat_messages")
+}
+

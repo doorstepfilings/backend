@@ -5,8 +5,8 @@ import { PrismaModule } from './services/prisma.module';
 
 @Global()
 @Module({
-    imports: [PrismaModule],
-    providers: [PdfService, UniqueIDGenerator],
-    exports: [PdfService, UniqueIDGenerator, PrismaModule],
+  imports: [PrismaModule],
+  providers: [PdfService, UniqueIDGenerator],
+  exports: [PdfService, UniqueIDGenerator, PrismaModule],
 })
 export class SharedModule {}

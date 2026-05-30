@@ -6,7 +6,7 @@ import {
     getLegacyDatabaseConfig,
     getPrimaryDatabaseConfig,
 } from '../../src/config/database-env';
-import { normalizeLegacyUserServicePaymentStatus } from '../../src/modules/operations/application/user-service-status';
+import { normalizeLegacyUserServicePaymentStatus } from '../../src/modules/service-operations/application/user-service-status';
 import { createPrismaClientOptions } from '../../src/shared/services/prisma-client-options';
 
 type LegacyRow = Record<string, unknown>;
@@ -1036,7 +1036,7 @@ async function migrateUsers(
         const rmId = toOptionalInteger(row.rm_id);
         const accountantId = toOptionalInteger(row.accountant_id);
 
-        ensureReferenceExists(rmId, userIds, 'regional manager user');
+        ensureReferenceExists(rmId, userIds, 'Relationship Manager  user');
         ensureReferenceExists(accountantId, userIds, 'accountant user');
 
         await prisma.user.update({

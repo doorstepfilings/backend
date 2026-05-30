@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Milestone Sequence Preview</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #f3f7ff;
+        --bg-accent: #eef4ff;
+        --surface: rgba(255, 255, 255, 0.94);
+        --surface-strong: #ffffff;
+        --line: rgba(43, 73, 154, 0.12);
+        --line-strong: rgba(43, 73, 154, 0.18);
+        --text: #16234d;
+        --muted: #6b78a6;
+        --blue: #2055f7;
+        --blue-deep: #1746db;
+        --green: #23c55e;
+        --green-soft: rgba(35, 197, 94, 0.13);
+        --orange: #ff7a1a;
+        --orange-soft: rgba(255, 122, 26, 0.13);
+        --shadow-lg: 0 36px 90px rgba(28, 50, 115, 0.08);
+        --shadow-md: 0 18px 50px rgba(28, 50, 115, 0.06);
+        --shadow-sm: 0 10px 28px rgba(28, 50, 115, 0.05);
+        --radius-xl: 28px;
+        --radius-lg: 22px;
+        --radius-md: 16px;
+        --radius-sm: 12px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+
+      body {
+        font-family: "Manrope", "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(32, 85, 247, 0.09), transparent 30%),
+          radial-gradient(circle at top right, rgba(99, 102, 241, 0.08), transparent 28%),
+          linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+        color: var(--text);
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.55) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.55) 1px, transparent 1px);
+        background-size: 48px 48px;
+        mask-image: radial-gradient(circle at center, black 45%, transparent 100%);
+        pointer-events: none;
+        opacity: 0.33;
+      }
+
+      .designer-shell {
+        width: min(1540px, calc(100vw - 32px));
+        margin: 28px auto;
+        background: var(--surface);
+        border: 1px solid rgba(255, 255, 255, 0.7);
+        border-radius: 30px;
+        box-shadow: var(--shadow-lg);
+        overflow: hidden;
+        position: relative;
+      }
+
+      .designer-shell::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(circle at 12% 8%, rgba(58, 130, 255, 0.07), transparent 18%),
+          radial-gradient(circle at 82% 18%, rgba(69, 195, 255, 0.07), transparent 18%);
+        pointer-events: none;
+      }
+
+      .content {
+        position: relative;
+        z-index: 1;
+      }
+
+      .topbar,
+      .hero,
+      .canvas,
+      .footer-bar {
+        padding-left: 34px;
+        padding-right: 34px;
+      }
+
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 24px;
+        padding-top: 20px;
+      }
+
+      .breadcrumbs {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .breadcrumbs strong {
+        color: var(--text);
+      }
+
+      .crumb-chevron {
+        width: 15px;
+        height: 15px;
+        color: rgba(107, 120, 166, 0.8);
+      }
+
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 14px 18px;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.84);
+        color: var(--text);
+        font-family: inherit;
+        font-size: 15px;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        box-shadow: var(--shadow-sm);
+        cursor: pointer;
+        transition:
+          transform 160ms ease,
+          box-shadow 160ms ease,
+          border-color 160ms ease,
+          background 160ms ease;
+      }
+
+      .btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 14px 30px rgba(28, 50, 115, 0.08);
+        border-color: var(--line-strong);
+      }
+
+      .btn svg {
+        width: 19px;
+        height: 19px;
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, var(--blue) 0%, #266aff 100%);
+        border-color: rgba(32, 85, 247, 0.38);
+        color: white;
+      }
+
+      .btn-primary:hover {
+        background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue) 100%);
+      }
+
+      .btn-danger {
+        color: #ff3d3d;
+        border-color: rgba(255, 61, 61, 0.18);
+        background: rgba(255, 255, 255, 0.88);
+      }
+
+      .hero {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 32px;
+        padding-top: 20px;
+        padding-bottom: 24px;
+      }
+
+      .hero-copy {
+        max-width: 720px;
+      }
+
+      h1 {
+        margin: 0;
+        font-family: "Sora", "Manrope", sans-serif;
+        font-size: clamp(2rem, 3vw, 3.05rem);
+        line-height: 1.08;
+        letter-spacing: -0.05em;
+      }
+
+      .hero-copy p {
+        margin: 18px 0 0;
+        max-width: 680px;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.6;
+      }
+
+      .step-badge {
+        margin-top: 58px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 12px 18px;
+        border-radius: 999px;
+        background: rgba(32, 85, 247, 0.08);
+        color: var(--blue);
+        font-size: 14px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+      }
+
+      .canvas {
+        padding-top: 24px;
+        padding-bottom: 30px;
+        border-top: 1px solid rgba(31, 57, 127, 0.08);
+      }
+
+      .designer-grid {
+        max-width: 1098px;
+      }
+
+      .control-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+        gap: 18px;
+      }
+
+      .panel,
+      .board-card,
+      .hint-bar,
+      .cta-panel {
+        background: rgba(255, 255, 255, 0.84);
+        border: 1px solid rgba(31, 57, 127, 0.09);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-md);
+      }
+
+      .panel {
+        padding: 18px 18px 20px;
+        animation: rise-in 460ms ease both;
+      }
+
+      .panel h2 {
+        margin: 0 0 18px;
+        color: #5d6a9f;
+        font-size: 14px;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+      }
+
+      .search-field {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        min-height: 58px;
+        padding: 0 16px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+        color: #6b78a6;
+        font-size: 15px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      }
+
+      .search-field svg,
+      .mini-icon {
+        width: 18px;
+        height: 18px;
+        color: #253768;
+      }
+
+      .suggestion-card {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .suggestion-card h3 {
+        margin: 0;
+        font-family: "Sora", "Manrope", sans-serif;
+        font-size: 25px;
+        line-height: 1.15;
+        letter-spacing: -0.04em;
+      }
+
+      .suggestion-card p {
+        margin: 10px 0 0;
+        max-width: 420px;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.55;
+      }
+
+      .hint-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 16px 20px;
+        margin-top: 24px;
+      }
+
+      .drag-copy {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        color: var(--muted);
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .switch-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 14px;
+        color: var(--muted);
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .switch {
+        position: relative;
+        width: 42px;
+        height: 24px;
+      }
+
+      .switch input {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+      }
+
+      .track {
+        width: 100%;
+        height: 100%;
+        border-radius: 999px;
+        background: rgba(31, 57, 127, 0.16);
+        transition: background 180ms ease;
+      }
+
+      .track::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: white;
+        box-shadow: 0 4px 12px rgba(31, 57, 127, 0.22);
+        transition: transform 180ms ease;
+      }
+
+      .switch input:checked + .track {
+        background: linear-gradient(135deg, var(--blue) 0%, #4a7dff 100%);
+      }
+
+      .switch input:checked + .track::after {
+        transform: translateX(18px);
+      }
+
+      .board-card {
+        margin-top: 18px;
+        overflow: hidden;
+      }
+
+      .board-head,
+      .board-row {
+        display: grid;
+        grid-template-columns: 80px minmax(0, 2.2fr) minmax(0, 1.25fr) 140px 130px 128px;
+        align-items: center;
+        column-gap: 16px;
+      }
+
+      .board-head {
+        padding: 12px 18px;
+        color: #6070a6;
+        font-size: 13px;
+        font-weight: 800;
+        border-bottom: 1px solid rgba(31, 57, 127, 0.09);
+      }
+
+      .rows {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.84) 0%, rgba(248, 251, 255, 0.86) 100%);
+      }
+
+      .board-row {
+        position: relative;
+        min-height: 86px;
+        padding: 18px 18px 18px 24px;
+        border-bottom: 1px solid rgba(31, 57, 127, 0.08);
+        animation: rise-in 520ms ease both;
+      }
+
+      .board-row:last-child {
+        border-bottom: 0;
+      }
+
+      .board-row::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 5px;
+        border-radius: 0 999px 999px 0;
+        background: var(--row-accent, var(--green));
+      }
+
+      .index-badge {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        border: 1.5px solid color-mix(in srgb, var(--row-accent, var(--green)) 44%, white);
+        color: var(--row-accent, var(--green));
+        background: color-mix(in srgb, var(--row-accent, var(--green)) 7%, white);
+        font-size: 28px;
+        font-weight: 800;
+        line-height: 1;
+      }
+
+      .milestone-main {
+        min-width: 0;
+      }
+
+      .milestone-name {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .milestone-name strong {
+        font-family: "Sora", "Manrope", sans-serif;
+        font-size: 16px;
+        letter-spacing: -0.03em;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 4px 9px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 900;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .pill-blue {
+        color: var(--blue);
+        background: rgba(32, 85, 247, 0.09);
+      }
+
+      .pill-green {
+        color: #15934b;
+        background: var(--green-soft);
+      }
+
+      .milestone-key {
+        margin-top: 6px;
+        color: #6977a7;
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .stacked-meta {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        color: #6977a7;
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .assigned {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        color: #42548b;
+        font-size: 15px;
+        font-weight: 800;
+      }
+
+      .action-cluster {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        justify-content: flex-end;
+      }
+
+      .icon-btn {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.88);
+        color: #253768;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition:
+          transform 160ms ease,
+          box-shadow 160ms ease,
+          border-color 160ms ease,
+          color 160ms ease;
+      }
+
+      .icon-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-sm);
+        border-color: var(--line-strong);
+      }
+
+      .icon-btn svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      .icon-btn.delete {
+        color: #ff3d3d;
+      }
+
+      .cta-panel {
+        margin-top: 24px;
+        border-style: dashed;
+      }
+
+      .add-button {
+        width: 100%;
+        min-height: 72px;
+        border: 0;
+        background: transparent;
+        color: var(--blue);
+        font-family: inherit;
+        font-size: 18px;
+        font-weight: 800;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        cursor: pointer;
+      }
+
+      .add-button svg {
+        width: 22px;
+        height: 22px;
+      }
+
+      .footer-bar {
+        position: sticky;
+        bottom: 0;
+        z-index: 5;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 18px;
+        min-height: 70px;
+        background: rgba(255, 255, 255, 0.88);
+        border-top: 1px solid rgba(31, 57, 127, 0.09);
+        backdrop-filter: blur(16px);
+      }
+
+      .save-copy {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        flex-wrap: wrap;
+        color: #6270a1;
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .save-state {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        color: #139a49;
+        font-weight: 800;
+      }
+
+      .save-state svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      .footer-actions {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .hidden-required .required-chip,
+      .hidden-required [data-required-column] {
+        opacity: 0;
+        visibility: hidden;
+      }
+
+      .hidden-required .board-head [data-required-label] {
+        color: rgba(96, 112, 166, 0.45);
+      }
+
+      @keyframes rise-in {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 1260px) {
+        .hero {
+          flex-direction: column;
+        }
+
+        .step-badge {
+          margin-top: 0;
+        }
+
+        .board-head,
+        .board-row {
+          grid-template-columns: 70px minmax(0, 1.7fr) minmax(0, 1fr) 110px 110px 116px;
+        }
+      }
+
+      @media (max-width: 1040px) {
+        .designer-shell {
+          width: min(100vw - 18px, 1540px);
+          margin: 10px auto;
+          border-radius: 24px;
+        }
+
+        .topbar,
+        .hero,
+        .canvas,
+        .footer-bar {
+          padding-left: 18px;
+          padding-right: 18px;
+        }
+
+        .topbar,
+        .footer-bar,
+        .hint-bar,
+        .suggestion-card {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .actions,
+        .footer-actions {
+          justify-content: stretch;
+        }
+
+        .actions .btn,
+        .footer-actions .btn {
+          width: 100%;
+        }
+
+        .control-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .board-head {
+          display: none;
+        }
+
+        .board-row {
+          grid-template-columns: 64px 1fr;
+          row-gap: 14px;
+          padding-right: 20px;
+        }
+
+        .board-row > .stacked-meta,
+        .board-row > .assigned,
+        .board-row > .required-cell,
+        .board-row > .action-cluster {
+          grid-column: 2;
+        }
+
+        .board-row > .action-cluster {
+          justify-content: flex-start;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .breadcrumbs {
+          flex-wrap: wrap;
+        }
+
+        h1 {
+          font-size: 2.15rem;
+        }
+
+        .hero-copy p {
+          font-size: 16px;
+        }
+
+        .suggestion-card h3 {
+          font-size: 22px;
+        }
+
+        .save-copy {
+          gap: 12px;
+        }
+
+        .btn {
+          padding: 13px 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="designer-shell">
+      <div class="content">
+        <section class="topbar">
+          <nav class="breadcrumbs" aria-label="Breadcrumb">
+            <span>Service Designer</span>
+            <svg class="crumb-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <strong>Milestone Sequence</strong>
+          </nav>
+
+          <div class="actions">
+            <button class="btn" type="button">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z" stroke="currentColor" stroke-width="1.8" />
+                <circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8" />
+              </svg>
+              Preview
+            </button>
+            <button class="btn" type="button">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4.5 5.25a1.5 1.5 0 0 1 1.5-1.5h9.879a1.5 1.5 0 0 1 1.06.44l2.87 2.871a1.5 1.5 0 0 1 .44 1.06V18a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 18V5.25Z" stroke="currentColor" stroke-width="1.8" />
+                <path d="M8.25 3.75v5.5h7.5v-5.5M8.25 19.5v-6h7.5v6" stroke="currentColor" stroke-width="1.8" />
+              </svg>
+              Save Draft
+            </button>
+            <button class="btn btn-primary" type="button">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="m4.5 12 15-7.5-7.5 15-1.875-5.625L4.5 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+                <path d="M10.125 13.875 19.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              </svg>
+              Publish Workflow
+            </button>
+          </div>
+        </section>
+
+        <section class="hero">
+          <div class="hero-copy">
+            <h1>Milestone Sequence</h1>
+            <p>
+              Add milestones from the shared library, arrange the default service order,
+              and decide which steps should be required from the start.
+            </p>
+          </div>
+
+          <div class="step-badge" id="stepCountBadge">4 Steps</div>
+        </section>
+
+        <section class="canvas">
+          <div class="designer-grid">
+            <div class="control-grid">
+              <article class="panel">
+                <h2>Add Milestone</h2>
+                <div class="search-field" aria-label="Search milestones">
+                  <span>Search reusable milestones...</span>
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="m7.5 10.5 4.5 4.5 4.5-4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </div>
+              </article>
+
+              <article class="panel suggestion-card">
+                <div>
+                  <h2>Next Suggestion</h2>
+                  <h3>Department Submission</h3>
+                  <p>
+                    Create new milestones in the library when you need more workflow
+                    steps or insert the suggested stage to continue the sequence.
+                  </p>
+                </div>
+                <button class="btn" id="addSuggestionButton" type="button">Add To End</button>
+              </article>
+            </div>
+
+            <div class="hint-bar">
+              <div class="drag-copy">
+                <svg class="mini-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle cx="7" cy="7" r="1.5" fill="currentColor" />
+                  <circle cx="7" cy="12" r="1.5" fill="currentColor" />
+                  <circle cx="7" cy="17" r="1.5" fill="currentColor" />
+                  <circle cx="12" cy="7" r="1.5" fill="currentColor" />
+                  <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+                  <circle cx="12" cy="17" r="1.5" fill="currentColor" />
+                </svg>
+                Drag and drop to reorder milestones
+              </div>
+
+              <label class="switch-wrap">
+                <span>Show required status</span>
+                <span class="switch">
+                  <input id="requiredVisibilityToggle" type="checkbox" checked />
+                  <span class="track" aria-hidden="true"></span>
+                </span>
+              </label>
+            </div>
+
+            <section class="board-card" aria-label="Milestone list">
+              <header class="board-head">
+                <div>#</div>
+                <div>Milestone</div>
+                <div>Type</div>
+                <div>Assigned To</div>
+                <div data-required-label>Required</div>
+                <div style="text-align: right;">Actions</div>
+              </header>
+              <div class="rows" id="milestoneRows"></div>
+            </section>
+
+            <div class="cta-panel">
+              <button class="add-button" id="addMilestoneButton" type="button">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 5.25v13.5M5.25 12h13.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                </svg>
+                Add New Milestone
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <footer class="footer-bar">
+          <div class="save-copy">
+            <span>Last saved: Just now</span>
+            <span class="save-state">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="m5 13 4 4L19 7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              All changes saved
+            </span>
+          </div>
+
+          <div class="footer-actions">
+            <button class="btn btn-danger" type="button">Discard Changes</button>
+            <button class="btn btn-primary" type="button">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="m4.5 12 15-7.5-7.5 15-1.875-5.625L4.5 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+                <path d="M10.125 13.875 19.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              </svg>
+              Publish Workflow
+            </button>
+          </div>
+        </footer>
+      </div>
+    </main>
+
+    <script>
+      const rowsElement = document.getElementById("milestoneRows");
+      const stepCountBadge = document.getElementById("stepCountBadge");
+      const suggestionButton = document.getElementById("addSuggestionButton");
+      const addMilestoneButton = document.getElementById("addMilestoneButton");
+      const requiredVisibilityToggle = document.getElementById("requiredVisibilityToggle");
+
+      const dragIcon = `
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="8" cy="7" r="1.4" fill="currentColor"></circle>
+          <circle cx="8" cy="12" r="1.4" fill="currentColor"></circle>
+          <circle cx="8" cy="17" r="1.4" fill="currentColor"></circle>
+          <circle cx="14" cy="7" r="1.4" fill="currentColor"></circle>
+          <circle cx="14" cy="12" r="1.4" fill="currentColor"></circle>
+          <circle cx="14" cy="17" r="1.4" fill="currentColor"></circle>
+        </svg>`;
+
+      const editIcon = `
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4.5 19.5h3.375l9.37-9.37a1.875 1.875 0 1 0-2.652-2.652l-9.37 9.37V19.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
+          <path d="m13.5 7.5 3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+        </svg>`;
+
+      const deleteIcon = `
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M9 4.5h6M5.25 7.5h13.5M8.25 7.5v10.125A1.875 1.875 0 0 0 10.125 19.5h3.75a1.875 1.875 0 0 0 1.875-1.875V7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+          <path d="M10.5 10.5v4.5M13.5 10.5v4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+        </svg>`;
+
+      const typeIcon = `
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="m12 4.5 7.5 4.125L12 12.75 4.5 8.625 12 4.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path>
+          <path d="m4.5 12 7.5 4.125L19.5 12M4.5 15.375 12 19.5l7.5-4.125" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path>
+        </svg>`;
+
+      const assignedIcon = `
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M15.75 19.5v-.75A3.75 3.75 0 0 0 12 15H7.5a3.75 3.75 0 0 0-3.75 3.75v.75M9.75 10.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM20.25 19.5v-.75A3.75 3.75 0 0 0 17.625 15.15M15.75 4.73a3 3 0 0 1 0 5.54" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
+        </svg>`;
+
+      const milestones = [
+        {
+          id: crypto.randomUUID(),
+          name: "Start",
+          key: "start",
+          type: "Reusable milestone",
+          assignedTo: 2,
+          required: true,
+          globalDefault: true,
+          accent: "#23c55e",
+        },
+        {
+          id: crypto.randomUUID(),
+          name: "Verification",
+          key: "verification",
+          type: "Reusable milestone",
+          assignedTo: 3,
+          required: true,
+          globalDefault: true,
+          accent: "#23c55e",
+        },
+        {
+          id: crypto.randomUUID(),
+          name: "Review",
+          key: "review",
+          type: "Reusable milestone",
+          assignedTo: 2,
+          required: true,
+          globalDefault: true,
+          accent: "#ff7a1a",
+        },
+        {
+          id: crypto.randomUUID(),
+          name: "Completed",
+          key: "completed",
+          type: "Reusable milestone",
+          assignedTo: 1,
+          required: true,
+          globalDefault: true,
+          accent: "#23c55e",
+        },
+      ];
+
+      function renderMilestones() {
+        rowsElement.innerHTML = milestones
+          .map((milestone, index) => {
+            return `
+              <article class="board-row" style="--row-accent: ${milestone.accent}; animation-delay: ${index * 70}ms;">
+                <div class="index-badge">${index + 1}</div>
+                <div class="milestone-main">
+                  <div class="milestone-name">
+                    <strong>${milestone.name}</strong>
+                    ${milestone.globalDefault ? '<span class="pill pill-blue">Global Default</span>' : ""}
+                    <span class="pill pill-green required-chip">${milestone.required ? "Required" : "Optional"}</span>
+                  </div>
+                  <div class="milestone-key">Key: ${milestone.key}</div>
+                </div>
+                <div class="stacked-meta">
+                  ${typeIcon}
+                  <span>${milestone.type}</span>
+                </div>
+                <div class="assigned">
+                  ${assignedIcon}
+                  <span>${milestone.assignedTo}</span>
+                </div>
+                <div class="required-cell" data-required-column>
+                  <label class="switch" aria-label="Toggle required status for ${milestone.name}">
+                    <input type="checkbox" data-action="toggle-required" data-id="${milestone.id}" ${milestone.required ? "checked" : ""} />
+                    <span class="track" aria-hidden="true"></span>
+                  </label>
+                </div>
+                <div class="action-cluster">
+                  <button class="icon-btn" type="button" aria-label="Reorder ${milestone.name}" title="Reorder">
+                    ${dragIcon}
+                  </button>
+                  <button class="icon-btn" type="button" data-action="rename" data-id="${milestone.id}" aria-label="Rename ${milestone.name}" title="Rename">
+                    ${editIcon}
+                  </button>
+                  <button class="icon-btn delete" type="button" data-action="delete" data-id="${milestone.id}" aria-label="Delete ${milestone.name}" title="Delete">
+                    ${deleteIcon}
+                  </button>
+                </div>
+              </article>
+            `;
+          })
+          .join("");
+
+        stepCountBadge.textContent = `${milestones.length} ${milestones.length === 1 ? "Step" : "Steps"}`;
+      }
+
+      function addMilestone(data) {
+        milestones.push({
+          id: crypto.randomUUID(),
+          ...data,
+        });
+        renderMilestones();
+      }
+
+      suggestionButton.addEventListener("click", () => {
+        const alreadyAdded = milestones.some((item) => item.key === "department-submission");
+
+        if (alreadyAdded) {
+          suggestionButton.textContent = "Added";
+          suggestionButton.disabled = true;
+          return;
+        }
+
+        addMilestone({
+          name: "Department Submission",
+          key: "department-submission",
+          type: "Reusable milestone",
+          assignedTo: 2,
+          required: false,
+          globalDefault: false,
+          accent: "#2b7fff",
+        });
+
+        suggestionButton.textContent = "Added";
+        suggestionButton.disabled = true;
+      });
+
+      addMilestoneButton.addEventListener("click", () => {
+        const nextIndex = milestones.length + 1;
+        addMilestone({
+          name: `New Milestone ${nextIndex}`,
+          key: `new-milestone-${nextIndex}`,
+          type: "Custom milestone",
+          assignedTo: 1,
+          required: false,
+          globalDefault: false,
+          accent: "#8b5cf6",
+        });
+      });
+
+      requiredVisibilityToggle.addEventListener("change", () => {
+        document.body.classList.toggle("hidden-required", !requiredVisibilityToggle.checked);
+      });
+
+      rowsElement.addEventListener("change", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) {
+          return;
+        }
+
+        if (target.dataset.action !== "toggle-required") {
+          return;
+        }
+
+        const item = milestones.find((milestone) => milestone.id === target.dataset.id);
+        if (!item) {
+          return;
+        }
+
+        item.required = target.checked;
+        renderMilestones();
+      });
+
+      rowsElement.addEventListener("click", (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) {
+          return;
+        }
+
+        const actionButton = target.closest("[data-action]");
+        if (!(actionButton instanceof HTMLButtonElement)) {
+          return;
+        }
+
+        const { action, id } = actionButton.dataset;
+        const index = milestones.findIndex((milestone) => milestone.id === id);
+
+        if (index < 0) {
+          return;
+        }
+
+        if (action === "delete") {
+          milestones.splice(index, 1);
+          renderMilestones();
+          return;
+        }
+
+        if (action === "rename") {
+          const nextName = window.prompt("Rename milestone", milestones[index].name);
+          if (!nextName) {
+            return;
+          }
+
+          milestones[index].name = nextName.trim() || milestones[index].name;
+          milestones[index].key = milestones[index].name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "");
+          renderMilestones();
+        }
+      });
+
+      renderMilestones();
+    </script>
+  </body>
+</html>
