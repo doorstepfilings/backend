@@ -48,6 +48,17 @@ async function main() {
   });
 
   try {
+    console.log('\n0. Forcing MySQL server default engine to InnoDB...');
+    try {
+      await connection.query("SET GLOBAL default_storage_engine = 'InnoDB';");
+      await connection.query("SET SESSION default_storage_engine = 'InnoDB';");
+      console.log(' - Server default engine successfully set to InnoDB.');
+    } catch (e: any) {
+      console.log(` - Note: Could not set GLOBAL default engine (you may not have ROOT privileges): ${e.message}`);
+      console.log(' - Attempting to set SESSION default engine instead...');
+      await connection.query("SET SESSION default_storage_engine = 'InnoDB';");
+    }
+
     console.log('\n1. Cleaning up failed migration state...');
     
     // Drop table if exists
