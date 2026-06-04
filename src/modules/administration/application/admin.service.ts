@@ -24,7 +24,14 @@ import type {
   UpdateApplicationStatusInput,
   UpdateRequestStageInput,
 } from '../../service-operations/application/user-services.service';
-import { toUserServiceResource } from '../../service-operations/application/operations.mapper';
+import {
+  toServiceRequestDocumentResource,
+  toUserServiceResource,
+} from '../../service-operations/application/operations.mapper';
+import {
+  DocumentUploadService,
+  type UploadedDocumentFile,
+} from '../../service-operations/application/document-upload.service';
 import { toEnquiryResource } from '../../enquiries/application/enquiries.mapper';
 import {
   normalizeAdminCategoryInput,
@@ -109,6 +116,7 @@ export class AdminService {
     private readonly notificationService: NotificationService,
     private readonly stagesService: StagesService,
     private readonly workflowsService: WorkflowsService,
+    private readonly documentUploadService: DocumentUploadService,
   ) {}
 
   private normalizeInteger(value: number | string, fieldName: string) {
@@ -584,6 +592,17 @@ export class AdminService {
         },
       });
 
+      if (actorId) {
+        await this.workflowsService
+          .applyDefaultWorkflowToService(saved.id, actorId, false)
+          .catch((error) => {
+            console.error(
+              '[AdminService] Failed to apply default workflow to new service:',
+              error,
+            );
+          });
+      }
+
       return this.getService(saved.id);
     } catch (error) {
       this.rethrowFriendlyConstraintError(error, 'Service');
@@ -750,7 +769,6 @@ export class AdminService {
     await this.prisma.enquiry.delete({ where: { id } });
   }
 
-
   // ─── Application Management ───────────────────────────────────────────────
 
   async getAllServiceApplications(status?: string) {
@@ -781,13 +799,46 @@ export class AdminService {
     data: UpdateApplicationStatusInput,
   ) {
     id = this.normalizeInteger(id, 'application_id');
+    const normalizedStatus = String(data.status || '')
+      .trim()
+      .toLowerCase();
     const result = await this.userServicesService.updateApplicationStatus(
       id,
       data,
     );
 
     // Send finalized notification if marked completed/approved
-    if (data.status === 'completed' || data.status === 'approved') {
+    if (normalizedStatus === 'completed' || normalizedStatus === 'approved') {
+      const userService = (await this.prisma.userService.findUnique({
+        where: { id },
+        include: { user: true, service: true },
+      })) as any;
+      if (userService?.user) {
+        await this.notificationService
+          .sendServiceFinalizedNotification(userService.user, userService)
+          .catch((err) =>
+            console.error('[AdminService] Notification error:', err),
+          );
+      }
+    }
+
+    return result;
+  }
+
+  async overrideApplicationStatus(
+    id: number,
+    data: UpdateApplicationStatusInput,
+  ) {
+    id = this.normalizeInteger(id, 'application_id');
+    const normalizedStatus = String(data.status || '')
+      .trim()
+      .toLowerCase();
+    const result = await this.userServicesService.overrideApplicationStatus(
+      id,
+      data,
+    );
+
+    if (normalizedStatus === 'completed' || normalizedStatus === 'approved') {
       const userService = (await this.prisma.userService.findUnique({
         where: { id },
         include: { user: true, service: true },
@@ -851,6 +902,79 @@ export class AdminService {
       status,
       notes,
     );
+  }
+
+  async uploadApplicationDocuments(
+    applicationId: number,
+    actorId: number,
+    files: UploadedDocumentFile[],
+  ) {
+    applicationId = this.normalizeInteger(applicationId, 'application_id');
+    actorId = this.normalizeInteger(actorId, 'actor_id');
+
+    const request = await this.prisma.userService.findUnique({
+      where: { id: applicationId },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Service application not found');
+    }
+
+    if (
+      ['approved', 'cancelled', 'completed', 'rejected'].includes(
+        String(request.status || '').toLowerCase(),
+      )
+    ) {
+      throw new BadRequestException(
+        `Documents cannot be uploaded while the request is in '${request.status}' status.`,
+      );
+    }
+
+    const processedFiles = files.map((file) => {
+      const normalizedCategory = String(file.documentCategory || '')
+        .trim()
+        .toLowerCase();
+      const isClientVisibleCategory =
+        normalizedCategory === 'certificate' || normalizedCategory === 'report';
+
+      return {
+        ...file,
+        documentType:
+          file.documentType ||
+          (isClientVisibleCategory ? 'client' : 'internal'),
+        isFinal: file.isFinal || isClientVisibleCategory,
+      };
+    });
+
+    const uploadedDocs = await this.documentUploadService.uploadDocuments(
+      applicationId,
+      actorId,
+      processedFiles,
+    );
+    const createdIds = uploadedDocs.map((document) => Number(document.id));
+    const documents = await this.prisma.serviceRequestDocument.findMany({
+      where: { id: { in: createdIds }, userServiceId: applicationId },
+      include: { uploadedBy: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return documents.map(toServiceRequestDocumentResource);
+  }
+
+  async deleteApplicationDocument(applicationId: number, docId: number) {
+    applicationId = this.normalizeInteger(applicationId, 'application_id');
+    docId = this.normalizeInteger(docId, 'doc_id');
+
+    const document = await this.prisma.serviceRequestDocument.findFirst({
+      where: { id: docId, userServiceId: applicationId },
+    });
+
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    await this.documentUploadService.deleteDocumentById(docId);
+    return true;
   }
 
   // ─── Details & Stats ──────────────────────────────────────────────────────
@@ -989,7 +1113,6 @@ export class AdminService {
     if (score >= 20) return 'Needs Improvement';
     return 'Inactive';
   }
-
 
   async getStats() {
     const totalUsers = await this.prisma.user.count({

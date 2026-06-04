@@ -9,12 +9,13 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  UploadedFiles,
   Patch,
   Put,
   BadRequestException,
   ParseIntPipe,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { AnyFilesInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { successResponse } from '../../../../shared/http/api-response';
 import { JwtAuthGuard } from '../../../identity/infrastructure/auth/jwt-auth.guard';
 import { Roles } from '../../../identity/infrastructure/auth/roles.decorator';
@@ -38,6 +39,12 @@ import { ReorderWorkflowsDto } from '../../../workflows/presentation/http/dto/re
 import { UpdateWorkflowItemDto } from '../../../workflows/presentation/http/dto/update-workflow-item.dto';
 import { ReplaceDefaultWorkflowDto } from '../../../workflows/presentation/http/dto/replace-default-workflow.dto';
 import { ApplyDefaultWorkflowDto } from '../../../workflows/presentation/http/dto/apply-default-workflow.dto';
+import type { UploadedDocumentFile } from '../../../service-operations/application/document-upload.service';
+import {
+  mergeUploadedFilesWithMetadata,
+  normalizeUploadedDocumentFiles,
+  parseApplyServiceDocumentMetadata,
+} from '../../../service-operations/presentation/http/apply-service-request.parser';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -354,6 +361,7 @@ export class AdminController {
     return successResponse(result);
   }
 
+  @Patch('service-applications/:id/status')
   @Post('service-applications/:id/status')
   async updateApplicationStatus(
     @Param('id', ParseIntPipe) id: number,
@@ -361,6 +369,15 @@ export class AdminController {
   ) {
     const result = await this.adminService.updateApplicationStatus(id, data);
     return successResponse(result);
+  }
+
+  @Patch('service-applications/:id/override-status')
+  async overrideApplicationStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() data: UpdateApplicationStatusInput,
+  ) {
+    const result = await this.adminService.overrideApplicationStatus(id, data);
+    return successResponse(result, 'Status updated successfully');
   }
 
   @Patch('service-applications/:id/stage')
@@ -397,6 +414,45 @@ export class AdminController {
       data.remark,
     );
     return successResponse(result, `Document ${data.status} successfully`);
+  }
+
+  @Post('service-applications/:id/documents')
+  @UseInterceptors(AnyFilesInterceptor())
+  async uploadApplicationDocuments(
+    @CurrentAuthUser() authUser: { userId: number },
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: Record<string, unknown>,
+    @UploadedFiles() files: UploadedDocumentFile[] = [],
+  ) {
+    const isFinalGlobal =
+      body['is_final'] === '1' ||
+      body['is_final'] === 'true' ||
+      body['is_final'] === true;
+    const metadata = parseApplyServiceDocumentMetadata(body);
+    const normalizedFiles = normalizeUploadedDocumentFiles(files);
+    const uploadedFiles = mergeUploadedFilesWithMetadata(
+      normalizedFiles,
+      metadata,
+    ).map((file) => ({
+      ...file,
+      isFinal: file.isFinal ?? isFinalGlobal,
+    }));
+
+    const result = await this.adminService.uploadApplicationDocuments(
+      id,
+      authUser.userId,
+      uploadedFiles,
+    );
+    return successResponse(result, 'Documents uploaded successfully');
+  }
+
+  @Delete('service-applications/:id/documents/:docId')
+  async deleteApplicationDocument(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('docId', ParseIntPipe) docId: number,
+  ) {
+    await this.adminService.deleteApplicationDocument(id, docId);
+    return successResponse(null, 'Document deleted successfully');
   }
 
   @Post('service-applications/:id/upload-certificate')

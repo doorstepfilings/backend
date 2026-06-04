@@ -49,31 +49,64 @@ describe('WorkflowsService', () => {
 
   it('replaces the default workflow template with ordered active stages', async () => {
     prismaMock.stage.findMany.mockResolvedValue([
-      { id: 201, isActive: true },
-      { id: 202, isActive: true },
+      { id: 200, isActive: true, slug: 'payment-verification' },
+      { id: 201, isActive: true, slug: 'start' },
+      { id: 203, isActive: true, slug: 'cancelled' },
+      { id: 204, isActive: true, slug: 'completed' },
     ]);
     prismaMock.defaultServiceWorkflow.findMany.mockResolvedValue([
       {
         id: 1,
         isRequired: true,
         position: 1,
+        stage: {
+          id: 200,
+          name: 'Payment Verification',
+          slug: 'payment-verification',
+          color: '#2563eb',
+        },
+        stageId: 200,
+      },
+      {
+        id: 2,
+        isRequired: true,
+        position: 2,
         stage: { id: 201, name: 'Start', slug: 'start', color: '#0f766e' },
         stageId: 201,
       },
       {
-        id: 2,
-        isRequired: false,
-        position: 2,
-        stage: { id: 202, name: 'Review', slug: 'review', color: '#ea580c' },
-        stageId: 202,
+        id: 3,
+        isRequired: true,
+        position: 3,
+        stage: {
+          id: 203,
+          name: 'Cancelled',
+          slug: 'cancelled',
+          color: '#64748b',
+        },
+        stageId: 203,
+      },
+      {
+        id: 4,
+        isRequired: true,
+        position: 4,
+        stage: {
+          id: 204,
+          name: 'Completed',
+          slug: 'completed',
+          color: '#16a34a',
+        },
+        stageId: 204,
       },
     ]);
 
     const result = await service.replaceDefaultWorkflow(
       {
         items: [
-          { stageId: 202, position: 2, isRequired: false },
-          { stageId: 201, position: 1, isRequired: true },
+          { stageId: 204, position: 4, isRequired: true },
+          { stageId: 203, position: 3, isRequired: true },
+          { stageId: 200, position: 1, isRequired: true },
+          { stageId: 201, position: 2, isRequired: true },
         ],
       },
       99,
@@ -84,8 +117,10 @@ describe('WorkflowsService', () => {
     );
     expect(prismaMock.defaultServiceWorkflow.createMany).toHaveBeenCalledWith({
       data: [
-        { isRequired: true, position: 1, stageId: 201 },
-        { isRequired: false, position: 2, stageId: 202 },
+        { isRequired: true, position: 1, stageId: 200 },
+        { isRequired: true, position: 2, stageId: 201 },
+        { isRequired: true, position: 3, stageId: 203 },
+        { isRequired: true, position: 4, stageId: 204 },
       ],
     });
     expect(workflowLogsServiceMock.record).toHaveBeenCalledWith(
@@ -98,11 +133,19 @@ describe('WorkflowsService', () => {
     expect(result).toEqual([
       expect.objectContaining({
         position: 1,
-        stage_id: 201,
+        stage_id: 200,
       }),
       expect.objectContaining({
         position: 2,
-        stage_id: 202,
+        stage_id: 201,
+      }),
+      expect.objectContaining({
+        position: 3,
+        stage_id: 203,
+      }),
+      expect.objectContaining({
+        position: 4,
+        stage_id: 204,
       }),
     ]);
   });
@@ -116,23 +159,13 @@ describe('WorkflowsService', () => {
     });
     prismaMock.stage.findMany.mockResolvedValue([
       {
-        color: '#16a34a',
+        color: '#2563eb',
         createdAt: new Date('2026-05-20T09:00:00.000Z'),
-        id: 204,
+        id: 200,
         isActive: true,
         isDefault: true,
-        name: 'Completed',
-        slug: 'completed',
-        updatedAt: new Date('2026-05-20T09:00:00.000Z'),
-      },
-      {
-        color: '#ea580c',
-        createdAt: new Date('2026-05-20T09:00:00.000Z'),
-        id: 202,
-        isActive: true,
-        isDefault: true,
-        name: 'Review',
-        slug: 'review',
+        name: 'Payment Verification',
+        slug: 'payment-verification',
         updatedAt: new Date('2026-05-20T09:00:00.000Z'),
       },
       {
@@ -146,13 +179,23 @@ describe('WorkflowsService', () => {
         updatedAt: new Date('2026-05-20T09:00:00.000Z'),
       },
       {
-        color: '#2563eb',
+        color: '#64748b',
         createdAt: new Date('2026-05-20T09:00:00.000Z'),
         id: 203,
         isActive: true,
         isDefault: true,
-        name: 'Verification',
-        slug: 'verification',
+        name: 'Cancelled',
+        slug: 'cancelled',
+        updatedAt: new Date('2026-05-20T09:00:00.000Z'),
+      },
+      {
+        color: '#16a34a',
+        createdAt: new Date('2026-05-20T09:00:00.000Z'),
+        id: 204,
+        isActive: true,
+        isDefault: true,
+        name: 'Completed',
+        slug: 'completed',
         updatedAt: new Date('2026-05-20T09:00:00.000Z'),
       },
     ]);
@@ -162,13 +205,13 @@ describe('WorkflowsService', () => {
     expect(prismaMock.stage.findMany).toHaveBeenCalledWith({
       where: {
         slug: {
-          in: ['start', 'review', 'verification', 'completed'],
+          in: ['payment-verification', 'start', 'cancelled', 'completed'],
         },
       },
     });
     expect(result.map((item: any) => [item.position, item.stage_id])).toEqual([
-      [1, 201],
-      [2, 202],
+      [1, 200],
+      [2, 201],
       [3, 203],
       [4, 204],
     ]);
@@ -183,6 +226,16 @@ describe('WorkflowsService', () => {
     });
     prismaMock.stage.findMany.mockResolvedValue([
       {
+        color: '#2563eb',
+        createdAt: new Date('2026-05-20T09:00:00.000Z'),
+        id: 200,
+        isActive: true,
+        isDefault: true,
+        name: 'Payment Verification',
+        slug: 'payment-verification',
+        updatedAt: new Date('2026-05-20T09:00:00.000Z'),
+      },
+      {
         color: '#0f766e',
         createdAt: new Date('2026-05-20T09:00:00.000Z'),
         id: 201,
@@ -193,23 +246,13 @@ describe('WorkflowsService', () => {
         updatedAt: new Date('2026-05-20T09:00:00.000Z'),
       },
       {
-        color: '#ea580c',
-        createdAt: new Date('2026-05-20T09:00:00.000Z'),
-        id: 202,
-        isActive: true,
-        isDefault: true,
-        name: 'Review',
-        slug: 'review',
-        updatedAt: new Date('2026-05-20T09:00:00.000Z'),
-      },
-      {
-        color: '#2563eb',
+        color: '#64748b',
         createdAt: new Date('2026-05-20T09:00:00.000Z'),
         id: 203,
         isActive: true,
         isDefault: true,
-        name: 'Verification',
-        slug: 'verification',
+        name: 'Cancelled',
+        slug: 'cancelled',
         updatedAt: new Date('2026-05-20T09:00:00.000Z'),
       },
       {
@@ -236,8 +279,8 @@ describe('WorkflowsService', () => {
 
     expect(prismaMock.serviceWorkflow.createMany).toHaveBeenCalledWith({
       data: [
-        { isRequired: true, position: 1, serviceId: 10, stageId: 201 },
-        { isRequired: true, position: 2, serviceId: 10, stageId: 202 },
+        { isRequired: true, position: 1, serviceId: 10, stageId: 200 },
+        { isRequired: true, position: 2, serviceId: 10, stageId: 201 },
         { isRequired: true, position: 3, serviceId: 10, stageId: 203 },
         { isRequired: true, position: 4, serviceId: 10, stageId: 204 },
       ],
@@ -249,7 +292,12 @@ describe('WorkflowsService', () => {
   });
 
   it('returns a clear error when replacing the default workflow without the template table', async () => {
-    prismaMock.stage.findMany.mockResolvedValue([{ id: 201, isActive: true }]);
+    prismaMock.stage.findMany.mockResolvedValue([
+      { id: 200, isActive: true, slug: 'payment-verification' },
+      { id: 201, isActive: true, slug: 'start' },
+      { id: 203, isActive: true, slug: 'cancelled' },
+      { id: 204, isActive: true, slug: 'completed' },
+    ]);
     prismaMock.defaultServiceWorkflow.deleteMany.mockRejectedValue({
       code: 'P2021',
       meta: {
@@ -260,7 +308,12 @@ describe('WorkflowsService', () => {
     await expect(
       service.replaceDefaultWorkflow(
         {
-          items: [{ stageId: 201 }],
+          items: [
+            { stageId: 200 },
+            { stageId: 201 },
+            { stageId: 203 },
+            { stageId: 204 },
+          ],
         },
         99,
       ),

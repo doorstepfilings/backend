@@ -53,6 +53,44 @@ const SYSTEM_JOURNEY_STATUS_STAGE_INDEX: Record<string, number> = {
   completed: 4,
 };
 
+const WORKFLOW_STAGE_SLUGS_BY_TERMINAL_STATUS: Record<string, string[]> = {
+  approved: ['completed', 'complete'],
+  completed: ['completed', 'complete'],
+  cancelled: ['cancelled', 'canceled', 'cancel'],
+};
+
+const MUTUALLY_EXCLUSIVE_TERMINAL_STAGE_SLUGS: Record<string, string[]> = {
+  approved: ['cancelled', 'canceled', 'cancel'],
+  completed: ['cancelled', 'canceled', 'cancel'],
+  cancelled: ['completed', 'complete'],
+};
+
+function normalizeWorkflowSlug(workflow: any) {
+  return String(workflow?.stage?.slug ?? workflow?.slug ?? '')
+    .trim()
+    .toLowerCase();
+}
+
+function findWorkflowForTerminalStatus(status: string, workflows: any[]) {
+  const candidateSlugs = WORKFLOW_STAGE_SLUGS_BY_TERMINAL_STATUS[status] ?? [];
+
+  if (candidateSlugs.length === 0) {
+    return null;
+  }
+
+  return (
+    workflows.find((workflow) =>
+      candidateSlugs.includes(normalizeWorkflowSlug(workflow)),
+    ) ?? null
+  );
+}
+
+function isMutuallyExclusiveTerminalStage(status: string, workflow: any) {
+  const excludedSlugs = MUTUALLY_EXCLUSIVE_TERMINAL_STAGE_SLUGS[status] ?? [];
+
+  return excludedSlugs.includes(normalizeWorkflowSlug(workflow));
+}
+
 function toJsonSafeScalar(value: unknown) {
   if (typeof value === 'bigint') {
     const numericValue = Number(value);
@@ -158,7 +196,7 @@ function isClientVisibleDocument(document: any, ownerUserId?: number | null) {
   return false;
 }
 
-function toServiceRequestDocumentResource(document: any) {
+export function toServiceRequestDocumentResource(document: any) {
   const resolvedFileUrl = document.filePath ?? document.fileUrl ?? null;
 
   return {
@@ -246,28 +284,29 @@ function buildCustomProgress(userService: any) {
   }
 
   const status = String(userService.status || '').toLowerCase();
-  const lastWorkflow = allWorkflows[allWorkflows.length - 1] ?? null;
+  const terminalWorkflow = findWorkflowForTerminalStatus(status, allWorkflows);
   const currentWorkflow =
-    status === 'completed' && lastWorkflow
-      ? lastWorkflow
-      : (userService.currentWorkflow ??
-        allWorkflows.find(
-          (workflow: any) =>
-            Number(workflow.id) ===
-            Number(userService.currentServiceWorkflowId),
-        ) ??
-        null);
+    terminalWorkflow ??
+    userService.currentWorkflow ??
+    allWorkflows.find(
+      (workflow: any) =>
+        Number(workflow.id) === Number(userService.currentServiceWorkflowId),
+    ) ??
+    null;
   const currentPosition = currentWorkflow
     ? Number(currentWorkflow.position)
     : null;
 
   const stages = allWorkflows.map((workflow: any) => {
     const isCurrent = Number(workflow.id) === Number(currentWorkflow?.id ?? 0);
+    const isExcludedTerminalStage = isMutuallyExclusiveTerminalStage(
+      status,
+      workflow,
+    );
     const isCompleted =
-      status === 'completed'
-        ? !isCurrent
-        : currentPosition !== null &&
-          Number(workflow.position) < currentPosition;
+      !isExcludedTerminalStage &&
+      currentPosition !== null &&
+      Number(workflow.position) < currentPosition;
     return {
       ...toServiceWorkflowStageResource(workflow),
       is_completed: isCompleted,
@@ -382,9 +421,8 @@ function buildWorkflowJourney(userService: any) {
   const status = String(userService.status || '').toLowerCase();
   const paymentVerified = hasVerifiedPayment(userService);
   const currentWorkflow = resolveCurrentWorkflow(userService, workflows);
-  const lastWorkflow = workflows[workflows.length - 1] ?? null;
   const activeWorkflow =
-    status === 'completed' && lastWorkflow ? lastWorkflow : currentWorkflow;
+    findWorkflowForTerminalStatus(status, workflows) ?? currentWorkflow;
   const activeWorkflowPosition = activeWorkflow
     ? Number(activeWorkflow.position)
     : null;
@@ -430,6 +468,7 @@ function buildWorkflowJourney(userService: any) {
       source: 'workflow',
       workflow_id: Number(workflow.id),
       is_completed:
+        !isMutuallyExclusiveTerminalStage(status, workflow) &&
         activeWorkflowPosition !== null &&
         Number(workflow.position) < activeWorkflowPosition,
       is_current: Number(workflow.id) === Number(activeWorkflow?.id ?? 0),

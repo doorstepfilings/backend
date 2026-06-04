@@ -29,13 +29,39 @@ describe('StagesService', () => {
     service = new StagesService(prismaMock, workflowLogsServiceMock);
   });
 
-  it('keeps default stages editable', async () => {
+  it('does not allow updating a default stage', async () => {
+    prismaMock.stage.findUnique.mockResolvedValue({
+      color: '#0f766e',
+      id: 1,
+      isActive: true,
+      isDefault: true,
+      name: 'Start',
+      slug: 'start',
+    });
+
+    await expect(
+      service.updateStage(
+        1,
+        {
+          color: '#123456',
+          isActive: false,
+          name: 'Kickoff',
+        },
+        99,
+      ),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(prismaMock.stage.update).not.toHaveBeenCalled();
+    expect(workflowLogsServiceMock.record).not.toHaveBeenCalled();
+  });
+
+  it('keeps custom stages editable', async () => {
     prismaMock.stage.findUnique
       .mockResolvedValueOnce({
         color: '#0f766e',
         id: 1,
         isActive: true,
-        isDefault: true,
+        isDefault: false,
         name: 'Start',
         slug: 'start',
       })
@@ -45,7 +71,7 @@ describe('StagesService', () => {
       createdAt: new Date('2026-05-20T09:00:00.000Z'),
       id: 1,
       isActive: false,
-      isDefault: true,
+      isDefault: false,
       name: 'Kickoff',
       slug: 'kickoff',
       updatedAt: new Date('2026-05-20T09:30:00.000Z'),
@@ -73,7 +99,7 @@ describe('StagesService', () => {
     expect(result).toMatchObject({
       id: 1,
       is_active: false,
-      is_default: true,
+      is_default: false,
       name: 'Kickoff',
       slug: 'kickoff',
     });

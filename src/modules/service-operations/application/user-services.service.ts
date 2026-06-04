@@ -462,6 +462,15 @@ export class UserServicesService {
         this.canTransitionTo(userService.status, targetStatus)
       ) {
         updateData.status = targetStatus;
+        this.applyStatusSideEffects(updateData, targetStatus);
+
+        if (normalizedClientMessage === undefined) {
+          const defaultClientMessage =
+            this.defaultClientMessageForStatus(targetStatus);
+          if (defaultClientMessage !== undefined) {
+            updateData.clientMessage = defaultClientMessage;
+          }
+        }
       }
 
       await tx.userService.update({
@@ -544,6 +553,7 @@ export class UserServicesService {
       'submitted_to_ca',
       'update_required',
       'approved',
+      'completed',
       'cancelled',
     ],
     submitted_to_ca: [
@@ -571,26 +581,30 @@ export class UserServicesService {
     rejected: ['applied'],
   };
 
+  private static readonly KNOWN_STATUSES = new Set(
+    Object.keys(UserServicesService.STATUS_FLOW),
+  );
+
   private static readonly STATUS_TO_WORKFLOW_STAGE_SLUGS: Record<
     string,
     string[]
   > = {
-    applied: ['start'],
-    paid: ['start'],
-    payment_pending: ['start'],
-    in_cart: ['start'],
-    under_review: ['verification', 'review', 'start'],
-    update_required: ['verification', 'review', 'start'],
+    applied: ['payment-verification', 'start'],
+    paid: ['payment-verification', 'start'],
+    payment_pending: ['payment-verification', 'start'],
+    in_cart: ['payment-verification', 'start'],
+    under_review: ['start', 'verification', 'review'],
+    update_required: ['start', 'verification', 'review'],
     in_progress: ['review', 'verification', 'start'],
     submitted_to_ca: [
       'department-submission',
+      'start',
       'review',
       'verification',
-      'start',
     ],
-    approved: ['completed'],
-    completed: ['completed'],
-    cancelled: ['start'],
+    approved: ['completed', 'complete'],
+    completed: ['completed', 'complete'],
+    cancelled: ['cancelled', 'canceled', 'cancel'],
     rejected: ['start'],
   };
 
@@ -598,17 +612,29 @@ export class UserServicesService {
     string,
     string
   > = {
-    start: 'applied',
+    'payment-verification': 'paid',
+    start: 'under_review',
     verification: 'under_review',
     review: 'in_progress',
     'department-submission': 'submitted_to_ca',
     completed: 'completed',
+    complete: 'completed',
+    cancelled: 'cancelled',
+    canceled: 'cancelled',
+    cancel: 'cancelled',
   };
 
   canTransitionTo(current: string, next: string): boolean {
-    if (current === next) return true;
-    const allowed = UserServicesService.STATUS_FLOW[current] || [];
-    return allowed.includes(next);
+    const normalizedCurrent = String(current || '')
+      .trim()
+      .toLowerCase();
+    const normalizedNext = String(next || '')
+      .trim()
+      .toLowerCase();
+
+    if (normalizedCurrent === normalizedNext) return true;
+    const allowed = UserServicesService.STATUS_FLOW[normalizedCurrent] || [];
+    return allowed.includes(normalizedNext);
   }
 
   private async getWorkflowIdForStatus(
@@ -673,17 +699,21 @@ export class UserServicesService {
     id: number,
     data: UpdateApplicationStatusInput,
   ) {
+    const normalizedStatus = String(data.status || '')
+      .trim()
+      .toLowerCase();
+
     const userService = await this.prisma.userService.findUniqueOrThrow({
       where: { id },
     });
 
-    if (!this.canTransitionTo(userService.status, data.status)) {
+    if (!this.canTransitionTo(userService.status, normalizedStatus)) {
       throw new BadRequestException(
-        `Invalid status transition from ${userService.status} to ${data.status}`,
+        `Invalid status transition from ${userService.status} to ${normalizedStatus}`,
       );
     }
 
-    const updateData: any = { status: data.status };
+    const updateData: any = { status: normalizedStatus };
     if (data.ca_notes !== undefined) {
       updateData.caNotes = this.normalizeNullableText(data.ca_notes);
     }
@@ -700,9 +730,8 @@ export class UserServicesService {
         data.client_message,
       );
     } else {
-      const defaultClientMessage = this.defaultClientMessageForStatus(
-        data.status,
-      );
+      const defaultClientMessage =
+        this.defaultClientMessageForStatus(normalizedStatus);
       if (defaultClientMessage !== undefined) {
         updateData.clientMessage = defaultClientMessage;
       }
@@ -711,7 +740,7 @@ export class UserServicesService {
       updateData.certificateUrl = data.certificate_url;
     }
 
-    if (data.status === 'approved') {
+    if (normalizedStatus === 'approved') {
       updateData.verified = true;
       if (!userService.certificateUrl && !data.certificate_url) {
         throw new BadRequestException(
@@ -720,16 +749,105 @@ export class UserServicesService {
       }
     }
 
+    this.applyStatusSideEffects(updateData, normalizedStatus);
+
     await this.prisma.$transaction(async (tx) => {
       const matchingWorkflowId = await this.getWorkflowIdForStatus(
         Number(userService.serviceId),
-        data.status,
+        normalizedStatus,
         tx,
       );
 
       if (matchingWorkflowId !== null) {
         updateData.currentServiceWorkflowId = matchingWorkflowId;
         updateData.currentStageUpdatedAt = new Date();
+      }
+
+      await tx.userService.update({
+        where: { id },
+        data: updateData,
+      });
+    });
+
+    const hydrated = (await this.prisma.userService.findUniqueOrThrow({
+      where: { id },
+      include: {
+        service: { include: { category: true, documents: true } },
+        user: true,
+        accountant: true,
+      },
+    })) as any;
+
+    await this.populateRequestDocuments(hydrated);
+    await this.populateLatestPayments(hydrated);
+    await this.populateStageProgress(hydrated);
+
+    return toUserServiceResource(hydrated);
+  }
+
+  async overrideApplicationStatus(
+    id: number,
+    data: UpdateApplicationStatusInput,
+  ) {
+    id = this.normalizeInteger(id, 'application_id');
+    const normalizedStatus = String(data.status || '')
+      .trim()
+      .toLowerCase();
+
+    if (!UserServicesService.KNOWN_STATUSES.has(normalizedStatus)) {
+      throw new BadRequestException('Invalid status selected');
+    }
+
+    const userService = await this.prisma.userService.findUniqueOrThrow({
+      where: { id },
+    });
+
+    const updateData: any = { status: normalizedStatus };
+    if (data.ca_notes !== undefined) {
+      updateData.caNotes = this.normalizeNullableText(data.ca_notes);
+    }
+    if (data.update_note !== undefined) {
+      updateData.updateNote = this.normalizeNullableText(data.update_note);
+    }
+    if (data.rejection_reason !== undefined) {
+      updateData.rejectionReason = this.normalizeNullableText(
+        data.rejection_reason,
+      );
+    }
+    if (data.client_message !== undefined) {
+      updateData.clientMessage = this.normalizeNullableText(
+        data.client_message,
+      );
+    } else {
+      const defaultClientMessage =
+        this.defaultClientMessageForStatus(normalizedStatus);
+      if (defaultClientMessage !== undefined) {
+        updateData.clientMessage = defaultClientMessage;
+      }
+    }
+    if (data.certificate_url) {
+      updateData.certificateUrl = data.certificate_url;
+    }
+
+    this.applyStatusSideEffects(updateData, normalizedStatus);
+
+    await this.prisma.$transaction(async (tx) => {
+      const matchingWorkflowId = await this.getWorkflowIdForStatus(
+        Number(userService.serviceId),
+        normalizedStatus,
+        tx,
+      );
+
+      if (matchingWorkflowId !== null) {
+        updateData.currentServiceWorkflowId = matchingWorkflowId;
+        updateData.currentStageUpdatedAt = new Date();
+      } else if (
+        ['in_cart', USER_SERVICE_PAYMENT_PENDING_STATUS].includes(
+          normalizedStatus,
+        )
+      ) {
+        updateData.currentServiceWorkflowId = null;
+        updateData.currentStageUpdatedAt = null;
       }
 
       await tx.userService.update({
@@ -1297,6 +1415,23 @@ export class UserServicesService {
 
     const normalized = String(value).trim();
     return normalized === '' ? null : normalized;
+  }
+
+  private applyStatusSideEffects(
+    updateData: Record<string, any>,
+    status: string,
+  ) {
+    const normalizedStatus = String(status || '')
+      .trim()
+      .toLowerCase();
+
+    if (['approved', 'completed'].includes(normalizedStatus)) {
+      updateData.verified = true;
+    }
+
+    if (normalizedStatus === 'submitted_to_ca') {
+      updateData.submittedToCaAt = new Date();
+    }
   }
 
   private defaultClientMessageForStatus(status: string) {

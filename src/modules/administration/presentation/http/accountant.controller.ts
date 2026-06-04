@@ -119,13 +119,6 @@ export class AccountantController {
     const metadata = parseApplyServiceDocumentMetadata(body);
     const normalizedFiles = normalizeUploadedDocumentFiles(files);
 
-    console.log('[AccountantController] Upload started', {
-      requestId: id,
-      isFinalGlobal,
-      filesCount: files.length,
-      metadata: JSON.stringify(metadata),
-    });
-
     const uploadedFiles = mergeUploadedFilesWithMetadata(
       normalizedFiles,
       metadata,
@@ -133,12 +126,6 @@ export class AccountantController {
       ...file,
       isFinal: file.isFinal ?? isFinalGlobal,
     }));
-
-    console.log('[AccountantController] Merged files', {
-      mergedCount: uploadedFiles.length,
-      types: uploadedFiles.map((f) => f.documentType),
-      finals: uploadedFiles.map((f) => f.isFinal),
-    });
 
     const result = await this.accountantService.uploadDocuments(
       req.user.id,

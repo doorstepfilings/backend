@@ -44,24 +44,31 @@ export type ApplyDefaultWorkflowInput = {
 };
 
 const LEGACY_DEFAULT_WORKFLOW_STAGE_SLUGS = [
+  'payment-verification',
   'start',
-  'review',
-  'verification',
+  'cancelled',
+  'completed',
+] as const;
+
+const REQUIRED_DEFAULT_WORKFLOW_STAGE_SLUGS = [
+  'payment-verification',
+  'start',
+  'cancelled',
   'completed',
 ] as const;
 
 const STATUS_TO_REMAP_STAGE_SLUGS: Record<string, string[]> = {
-  applied: ['start'],
-  paid: ['start'],
-  payment_pending: ['start'],
-  in_cart: ['start'],
-  under_review: ['verification', 'review', 'start'],
-  update_required: ['verification', 'review', 'start'],
+  applied: ['payment-verification', 'start'],
+  paid: ['payment-verification', 'start'],
+  payment_pending: ['payment-verification', 'start'],
+  in_cart: ['payment-verification', 'start'],
+  under_review: ['start', 'verification', 'review'],
+  update_required: ['start', 'verification', 'review'],
   in_progress: ['review', 'verification', 'start'],
   submitted_to_ca: ['department-submission', 'review', 'verification', 'start'],
-  approved: ['approved', 'completed'],
-  cancelled: ['cancelled', 'start'],
-  completed: ['completed', 'approved'],
+  approved: ['completed', 'complete'],
+  cancelled: ['cancelled', 'canceled', 'cancel'],
+  completed: ['completed', 'complete'],
   rejected: ['rejected', 'start'],
 };
 
@@ -108,6 +115,7 @@ export class WorkflowsService {
     const items = this.normalizeDefaultWorkflowItems(data.items);
 
     await this.ensureActiveStagesExist(items.map((item) => item.stageId));
+    await this.ensureRequiredDefaultWorkflowStages(items);
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -488,7 +496,6 @@ export class WorkflowsService {
   }
 
   async assignStageToService(data: WorkflowAssignInput, actorId: number) {
-    console.log('Assigning workflow stage to service', { data, actorId });
     const serviceId = this.normalizeInteger(data.serviceId, 'serviceId');
     const stageId = this.normalizeInteger(data.stageId, 'stageId');
     const actor = this.normalizeInteger(actorId, 'actorId');
@@ -841,6 +848,32 @@ export class WorkflowsService {
     }
   }
 
+  private async ensureRequiredDefaultWorkflowStages(
+    items: DefaultWorkflowTemplateItemInput[],
+  ) {
+    const stageIds = [...new Set(items.map((item) => Number(item.stageId)))];
+    const stages = await this.prisma.stage.findMany({
+      where: { id: { in: stageIds } },
+      select: { id: true, slug: true },
+    });
+    const workflowSlugs = new Set(
+      stages.map((stage) =>
+        String(stage.slug || '')
+          .trim()
+          .toLowerCase(),
+      ),
+    );
+    const missingSlugs = REQUIRED_DEFAULT_WORKFLOW_STAGE_SLUGS.filter(
+      (slug) => !workflowSlugs.has(slug),
+    );
+
+    if (missingSlugs.length > 0) {
+      throw new BadRequestException(
+        `Default workflow must include: ${missingSlugs.join(', ')}`,
+      );
+    }
+  }
+
   private async loadDefaultWorkflowTemplate(
     client: Prisma.TransactionClient | PrismaService = this.prisma,
   ) {
@@ -929,7 +962,8 @@ export class WorkflowsService {
         table?: unknown;
       };
     };
-    const message = typeof candidate.message === 'string' ? candidate.message : '';
+    const message =
+      typeof candidate.message === 'string' ? candidate.message : '';
 
     return (
       candidate.code === 'P2021' &&
@@ -1280,7 +1314,8 @@ export class WorkflowsService {
   }
 
   private isClosedUserServiceStatus(status: unknown) {
-    const normalizedStatus = typeof status === 'string' ? status.trim().toLowerCase() : '';
+    const normalizedStatus =
+      typeof status === 'string' ? status.trim().toLowerCase() : '';
     return CLOSED_USER_SERVICE_STATUSES.has(normalizedStatus);
   }
 }

@@ -6,7 +6,10 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../../shared/services/prisma.service';
 import { toUserResource } from '../../identity/application/identity.mapper';
-import { toUserServiceResource } from '../../service-operations/application/operations.mapper';
+import {
+  toUserServiceResource,
+  toServiceRequestDocumentResource,
+} from '../../service-operations/application/operations.mapper';
 import {
   UserServicesService,
   UpdateRequestStageInput,
@@ -184,11 +187,12 @@ export class AccountantService {
     requestId = this.normalizeInteger(requestId, 'application_id');
 
     await this.showRequest(accountantId, requestId); // Verification
-    return (await this.prisma.serviceRequestDocument.findMany({
+    const documents = await this.prisma.serviceRequestDocument.findMany({
       where: { userServiceId: requestId },
       include: { uploadedBy: true },
       orderBy: { createdAt: 'desc' },
-    })) as any[];
+    });
+    return documents.map(toServiceRequestDocumentResource);
   }
 
   async deleteDocument(accountantId: number, docId: number) {
@@ -260,15 +264,6 @@ export class AccountantService {
     );
 
     if (finalAssetDoc) {
-      console.log(
-        '[AccountantService] Auto-approving request due to final asset upload:',
-        {
-          requestId,
-          docId: finalAssetDoc.id,
-          category: finalAssetDoc.documentCategory,
-        },
-      );
-
       const updatedRequest =
         await this.userServicesService.updateApplicationStatus(requestId, {
           status: 'approved',

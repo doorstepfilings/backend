@@ -4,14 +4,18 @@ export type ApplyServiceFormData = {
   address?: string;
   appointment_request?: 'yes' | 'no';
   city?: string;
+  countryIso?: string;
+  dialCode?: string;
+  district?: string | null;
   email?: string;
   fullName?: string;
+  landmark?: string | null;
   notes?: string;
   phone?: string;
   pincode?: string;
-  pricing_plan?: string;
-  scheduled_date?: string;
-  scheduled_time?: string;
+  pricing_plan?: string | null;
+  scheduled_date?: string | null;
+  scheduled_time?: string | null;
   state?: string;
 };
 

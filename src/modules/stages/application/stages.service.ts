@@ -100,6 +100,10 @@ export class StagesService {
       throw new NotFoundException('Stage not found');
     }
 
+    if (existing.isDefault) {
+      throw new BadRequestException('Default milestones are read-only');
+    }
+
     const updateData: Record<string, unknown> = {};
 
     if (data.name !== undefined) {
