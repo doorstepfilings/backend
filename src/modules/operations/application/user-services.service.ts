@@ -376,30 +376,23 @@ export class UserServicesService {
 
   // Status State Machine
   private static readonly STATUS_FLOW: Record<string, string[]> = {
-    in_cart: ['applied'],
-    payment_pending: ['paid', 'cancelled'],
-    applied: ['under_review', 'approved', 'cancelled'],
-    paid: ['under_review', 'approved', 'cancelled'],
-    under_review: [
-      'applied',
-      'update_required',
-      'in_progress',
-      'approved',
-      'cancelled',
-    ],
-    update_required: ['under_review', 'approved', 'cancelled'],
-    in_progress: [
-      'under_review',
-      'submitted_to_ca',
-      'update_required',
-      'approved',
-      'cancelled',
-    ],
-    submitted_to_ca: ['in_progress', 'approved', 'cancelled'],
-    approved: ['submitted_to_ca', 'completed'],
-    completed: ['approved'],
-    cancelled: ['applied'],
-    rejected: ['applied'],
+    draft: ['applied', 'payment_pending', 'cancelled'],
+    in_cart: ['applied', 'payment_pending', 'cancelled', 'draft'], // legacy
+    payment_pending: ['paid', 'cancelled', 'applied'],
+    paid: ['applied', 'document_collection', 'under_review', 'cancelled'],
+    applied: ['document_collection', 'under_review', 'completed', 'cancelled', 'rejected'],
+    pending: ['applied', 'document_collection', 'under_review', 'cancelled', 'rejected'], // legacy
+    document_collection: ['under_review', 'update_required', 'cancelled'],
+    under_review: ['update_required', 'in_progress', 'document_collection', 'completed', 'cancelled', 'rejected'],
+    update_required: ['under_review', 'document_collection', 'cancelled'],
+    revision_requested: ['under_review', 'update_required', 'cancelled'], // legacy
+    in_progress: ['under_review', 'completed', 'cancelled', 'rejected', 'update_required'],
+    processing: ['in_progress', 'completed', 'cancelled'], // legacy
+    submitted_to_ca: ['under_review', 'in_progress', 'completed', 'applied', 'document_collection', 'update_required', 'cancelled'], // legacy escape hatch
+    approved: ['completed'], // legacy
+    completed: [],
+    cancelled: ['applied', 'draft'],
+    rejected: ['applied', 'draft'],
   };
 
   canTransitionTo(current: string, next: string): boolean {

@@ -141,10 +141,8 @@ export function parseApplyServiceDocumentMetadata(
         rawMetadata === undefined ||
         rawMetadata === ''
     ) {
-        // Check if documents are already nested (e.g. by some middleware)
         const nestedDocuments = body['documents'];
         if (Array.isArray(nestedDocuments)) {
-            console.log('[Parser] Found nested documents array:', nestedDocuments.length);
             return nestedDocuments.map((item, index) => {
                 return normalizeDocumentMetadataRecord(
                     item as Record<string, unknown>,
@@ -155,7 +153,6 @@ export function parseApplyServiceDocumentMetadata(
 
         const indexedRecords = new Map<number, Record<string, unknown>>();
 
-        console.log('[Parser] Body keys:', Object.keys(body));
         Object.entries(body).forEach(([key, value]) => {
             const match = key.match(BRACKET_DOCUMENT_FIELD_PATTERN);
             if (!match) {
@@ -164,8 +161,6 @@ export function parseApplyServiceDocumentMetadata(
 
             const index = Number(match[1]);
             const field = match[2];
-
-            console.log('[Parser] Match found:', { key, index, field });
 
             if (!Number.isInteger(index) || field === 'file') {
                 return;
@@ -180,8 +175,7 @@ export function parseApplyServiceDocumentMetadata(
         indexedRecords.forEach((record, index) => {
             result[index] = normalizeDocumentMetadataRecord(record, index);
         });
-        
-        console.log('[Parser] Parsed bracket metadata:', result.length);
+
         return result;
     }
 

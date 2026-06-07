@@ -20,8 +20,10 @@ import { Roles } from '../../../identity/infrastructure/auth/roles.decorator';
 import { RolesGuard } from '../../../identity/infrastructure/auth/roles.guard';
 import {
     AdminService,
+    type AssignRMInput,
     type AdminCategoryInput,
     type AdminServiceInput,
+    type UpdateRoleInput,
 } from '../../application/admin.service';
 import type { UpdateApplicationStatusInput } from '../../../operations/application/user-services.service';
 
@@ -75,8 +77,12 @@ export class AdminController {
     }
 
     @Post('users/assign-rm')
-    async assignRM(@Body() data: { user_id: number; rm_id: number | null }) {
-        const user = await this.adminService.assignRM(data.user_id, data.rm_id);
+    async assignRM(@Body() data: AssignRMInput) {
+        const user = await this.adminService.assignRM(
+            data.user_id,
+            data.rm_id,
+            data,
+        );
         return successResponse(user, 'RM assigned successfully');
     }
 
@@ -92,8 +98,8 @@ export class AdminController {
     }
 
     @Post('users/update-role/:id')
-    async updateRole(@Param('id') id: number, @Body('role') role: string) {
-        const user = await this.adminService.updateRole(id, role);
+    async updateRole(@Param('id') id: number, @Body() data: UpdateRoleInput) {
+        const user = await this.adminService.updateRole(id, data);
         return successResponse(user, 'Role updated successfully');
     }
 

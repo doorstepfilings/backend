@@ -12,9 +12,37 @@ Local setup:
 ```bash
 cp .env.example .env
 npm install
+npm run install:browsers        # download Playwright Chromium (one-time per machine)
 npx prisma migrate dev --name init
 npm run start:dev
 ```
+
+## PDF / Browser Setup
+
+PDF generation (invoices, email attachments) uses **Playwright Chromium** — a self-contained browser bundled with the package. It does **not** require Chrome, Chromium, or any other browser installed on the host machine.
+
+### Local development (Windows / macOS / Linux)
+
+```bash
+npm install
+npm run install:browsers        # downloads Playwright's bundled Chromium (~130 MB, one-time)
+npm run start:dev
+```
+
+### Linux VPS / Production
+
+```bash
+git pull
+npm install
+npm run install:browsers        # downloads Playwright Chromium
+npm run install:browsers:deps   # installs required Linux system libraries (apt-based, one-time)
+npm run build
+pm2 restart doorstep-backend    # or: npm run start:prod
+```
+
+> **Note:** `npm run install:browsers` must be run once on every fresh server or CI/CD environment after `npm install`. Playwright caches the browser in `~/.cache/ms-playwright` and does not re-download unless the cache is cleared.
+
+> **Linux system libs:** If PDF generation fails on Linux with a `libgbm` or `libnss3` error, run `npm run install:browsers:deps` once to install the required OS packages automatically.
 
 Useful commands:
 

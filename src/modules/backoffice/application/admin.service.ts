@@ -28,6 +28,13 @@ export type AdminCategoryInput = any;
 
 export type AdminServiceInput = any;
 
+export type UserLocationInput = {
+  address?: string | null;
+  city?: string | null;
+  pincode?: string | null;
+  state?: string | null;
+};
+
 export type CreateUserInput = {
   name: string;
   email: string;
@@ -35,6 +42,15 @@ export type CreateUserInput = {
   role: string;
   mobile_number?: string;
   rm_id?: number;
+} & UserLocationInput;
+
+export type AssignRMInput = UserLocationInput & {
+  user_id: number;
+  rm_id: number | null;
+};
+
+export type UpdateRoleInput = UserLocationInput & {
+  role: string;
 };
 
 @Injectable()
@@ -66,6 +82,35 @@ export class AdminService {
     }
 
     return parsed;
+  }
+
+  private normalizeOptionalText(value: unknown) {
+    if (value === null) {
+      return null;
+    }
+
+    if (value === undefined) {
+      return undefined;
+    }
+
+    const text = String(value).trim();
+    return text ? text : null;
+  }
+
+  private normalizeLocationData(data: UserLocationInput = {}) {
+    const locationData: Record<string, string | null> = {};
+
+    const address = this.normalizeOptionalText(data.address);
+    const city = this.normalizeOptionalText(data.city);
+    const pincode = this.normalizeOptionalText(data.pincode);
+    const state = this.normalizeOptionalText(data.state);
+
+    if (address !== undefined) locationData.address = address;
+    if (city !== undefined) locationData.city = city;
+    if (pincode !== undefined) locationData.pincode = pincode;
+    if (state !== undefined) locationData.state = state;
+
+    return locationData;
   }
 
   // ─── User Management ──────────────────────────────────────────────────────
@@ -129,6 +174,7 @@ export class AdminService {
       role: data.role,
       mobileNumber: data.mobile_number,
       rmId: data.rm_id || null,
+      ...this.normalizeLocationData(data),
     };
 
     if (data.role === 'regional_manager') {
@@ -176,7 +222,7 @@ export class AdminService {
     await this.prisma.user.delete({ where: { id } });
   }
 
-  async assignRM(userId: number, rmId: number | null) {
+  async assignRM(userId: number, rmId: number | null, data: UserLocationInput = {}) {
     userId = this.normalizeInteger(userId, 'user_id');
     rmId =
       rmId === null || rmId === undefined || rmId === ('' as any)
@@ -202,12 +248,18 @@ export class AdminService {
       }
       return this.prisma.user.update({
         where: { id: userId },
-                data: { rmId }
+        data: {
+          rmId,
+          ...this.normalizeLocationData(data),
+        },
       });
     } else {
       return this.prisma.user.update({
         where: { id: userId },
-                data: { rmId: null }
+        data: {
+          rmId: null,
+          ...this.normalizeLocationData(data),
+        },
       });
     }
   }
@@ -285,12 +337,44 @@ export class AdminService {
     }
   }
 
-  async updateRole(id: number, role: string) {
+  async updateRole(id: number, roleOrData: string | UpdateRoleInput) {
     const user = (await this.prisma.user.findUniqueOrThrow({
       where: { id },
+      include: { assignedUsers: true, assignedAccountants: true },
     })) as any;
 
+    const role =
+      typeof roleOrData === 'string' ? roleOrData : String(roleOrData.role || '');
+
+    if (!role) {
+      throw new BadRequestException('Role is required');
+    }
+
+    if (
+      user.role === 'regional_manager' &&
+      role !== 'regional_manager' &&
+      user.assignedUsers.length > 0
+    ) {
+      throw new BadRequestException(
+        'Cannot change this RM role while users are assigned. Please reassign first.',
+      );
+    }
+
+    if (
+      user.role === 'accountant' &&
+      role !== 'accountant' &&
+      user.assignedAccountants.length > 0
+    ) {
+      throw new BadRequestException(
+        'Cannot change this Accountant role while users are assigned. Please reassign first.',
+      );
+    }
+
     const updateData: any = { role };
+    if (typeof roleOrData !== 'string') {
+      Object.assign(updateData, this.normalizeLocationData(roleOrData));
+    }
+
     if (role !== 'user') {
       updateData.rmId = null;
       updateData.accountantId = null;

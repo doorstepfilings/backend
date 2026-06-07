@@ -224,6 +224,8 @@ export function toUserServiceResource(
     invoice_unique_id: userService.latestPayment?.invoiceUniqueId ?? null,
     payment_id: userService.latestPayment?.id ?? null,
     order_created_at: userService.latestPayment?.createdAt ?? null,
+    transaction_id: userService.latestPayment?.paymentProviderTransactionId ?? null,
+    payment_method: userService.latestPayment?.paymentMethod ?? null,
     status: userService.status,
     payment_status: normalizePaymentStatus(userService.paymentStatus),
     form_data: userService.formData,

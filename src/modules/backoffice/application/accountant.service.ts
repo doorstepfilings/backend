@@ -179,12 +179,16 @@ export class AccountantService {
   async deleteDocument(accountantId: number, docId: number) {
     const doc = (await this.prisma.serviceRequestDocument.findUnique({
       where: { id: docId },
-      include: { userService: true },
+      include: { userService: true, uploadedBy: true },
     })) as any;
 
     if (!doc) throw new NotFoundException('Document not found');
     if (doc.userService.accountantId != accountantId) {
       throw new UnauthorizedException('Unauthorized');
+    }
+
+    if (doc.uploadedBy?.role === 'user') {
+      throw new BadRequestException('Accountants cannot delete client documents');
     }
 
     await this.documentUploadService.deleteDocumentById(docId);
@@ -293,10 +297,15 @@ export class AccountantService {
 
     const document = await this.prisma.serviceRequestDocument.findFirst({
       where: { id: docId, userServiceId: requestId },
+      include: { uploadedBy: true },
     });
 
     if (!document) {
       throw new NotFoundException('Document not found');
+    }
+
+    if (document.uploadedBy?.role === 'user') {
+      throw new BadRequestException('Accountants cannot delete client documents');
     }
 
     await this.documentUploadService.deleteDocumentById(docId);

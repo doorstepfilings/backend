@@ -57,7 +57,7 @@ export class RMService {
         where: { id: accountantId, role: 'accountant' },
       })) as any;
       if (!accountant) {
-        throw new UnauthorizedException('Invalid accountant');
+        throw new NotFoundException('Accountant not found');
       }
 
       await this.prisma.userService.updateMany({
