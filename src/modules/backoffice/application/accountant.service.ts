@@ -228,7 +228,7 @@ export class AccountantService {
         documentType:
           file.documentType ||
           (isClientVisibleCategory ? 'client' : 'internal'),
-        isFinal: file.isFinal || isClientVisibleCategory,
+        isFinal: Boolean(file.isFinal),
       };
     });
 
@@ -238,10 +238,11 @@ export class AccountantService {
       processedFiles,
     );
 
-    // Logic: if accountant upload for client certificate or report then auto-approve application
+    // Logic: if accountant upload for client certificate or report AND it is marked as FINAL then auto-approve application
     const finalAssetDoc = uploadedDocs.find(
       (doc) =>
         doc.documentType === 'client' &&
+        doc.isFinal &&
         (doc.documentCategory === 'certificate' ||
           doc.documentCategory === 'report'),
     );

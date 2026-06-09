@@ -26,7 +26,7 @@ export class ProfileController {
             query.rm_unique_id,
         );
 
-        return successResponse(result, 'Regional Manager found');
+        return successResponse(result, 'Relationship Manager found');
     }
 
     @UseGuards(JwtAuthGuard)
@@ -36,7 +36,7 @@ export class ProfileController {
             query.rm_unique_id,
         );
 
-        return successResponse(result, 'Regional Manager found');
+        return successResponse(result, 'Relationship Manager found');
     }
 
     @UseGuards(JwtAuthGuard)
@@ -52,7 +52,7 @@ export class ProfileController {
 
         return successResponse(
             result,
-            'Connected to Regional Manager successfully',
+            'Connected to Relationship Manager successfully',
         );
     }
 

@@ -89,7 +89,9 @@ function normalizeDocumentMetadataRecord(
                 `documents[${index}][existing_document_id]`,
             ) ?? null,
         is_final:
-            typeof isFinalRaw === 'boolean'
+            isFinalRaw === undefined || isFinalRaw === null
+                ? undefined
+                : typeof isFinalRaw === 'boolean'
                 ? isFinalRaw
                 : String(isFinalRaw).toLowerCase() === 'true',
         notes: normalizeString(record['notes']) ?? null,
@@ -142,13 +144,27 @@ export function parseApplyServiceDocumentMetadata(
         rawMetadata === ''
     ) {
         const nestedDocuments = body['documents'];
-        if (Array.isArray(nestedDocuments)) {
-            return nestedDocuments.map((item, index) => {
-                return normalizeDocumentMetadataRecord(
-                    item as Record<string, unknown>,
-                    index,
-                );
-            });
+        if (nestedDocuments && typeof nestedDocuments === 'object') {
+            if (Array.isArray(nestedDocuments)) {
+                return nestedDocuments.map((item, index) => {
+                    return normalizeDocumentMetadataRecord(
+                        item as Record<string, unknown>,
+                        index,
+                    );
+                });
+            } else {
+                const result: ApplyServiceDocumentMetadata[] = [];
+                Object.entries(nestedDocuments).forEach(([key, item]) => {
+                    const index = Number(key);
+                    if (Number.isInteger(index) && item && typeof item === 'object') {
+                        result[index] = normalizeDocumentMetadataRecord(
+                            item as Record<string, unknown>,
+                            index,
+                        );
+                    }
+                });
+                return result;
+            }
         }
 
         const indexedRecords = new Map<number, Record<string, unknown>>();

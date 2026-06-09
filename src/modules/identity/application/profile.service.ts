@@ -20,7 +20,7 @@ export class ProfileService {
         });
 
         if (!regionalManager || regionalManager.role !== 'regional_manager') {
-            throw new NotFoundException('Regional Manager not found');
+            throw new NotFoundException('Relationship Manager not found');
         }
 
         return {
@@ -56,7 +56,7 @@ export class ProfileService {
         });
 
         if (!regionalManager || regionalManager.role !== 'regional_manager') {
-            throw new NotFoundException('Regional Manager not found');
+            throw new NotFoundException('Relationship Manager not found');
         }
 
         const assignedUserCount = await this.prisma.user.count({
@@ -68,7 +68,7 @@ export class ProfileService {
 
         if (assignedUserCount >= 20) {
             throw new BadRequestException(
-                'This Regional Manager has reached the maximum limit of 20 assigned users.',
+                'This Relationship Manager has reached the maximum limit of 20 assigned users.',
             );
         }
 

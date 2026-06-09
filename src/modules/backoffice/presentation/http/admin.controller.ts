@@ -71,7 +71,7 @@ export class AdminController {
     }
 
     @Delete('users/:id')
-    async deleteUser(@Param('id') id: number) {
+    async deleteUser(@Param('id', ParseIntPipe) id: number) {
         await this.adminService.deleteUser(id);
         return successResponse(null, 'User deleted successfully');
     }
@@ -98,7 +98,10 @@ export class AdminController {
     }
 
     @Post('users/update-role/:id')
-    async updateRole(@Param('id') id: number, @Body() data: UpdateRoleInput) {
+    async updateRole(
+        @Param('id', ParseIntPipe) id: number,
+        @Body() data: UpdateRoleInput,
+    ) {
         const user = await this.adminService.updateRole(id, data);
         return successResponse(user, 'Role updated successfully');
     }
@@ -117,7 +120,7 @@ export class AdminController {
 
     @Patch('categories/update/:id')
     async updateCategory(
-        @Param('id') id: number,
+        @Param('id', ParseIntPipe) id: number,
         @Body() data: AdminCategoryInput,
     ) {
         const result = await this.adminService.updateCategory(id, data);
@@ -125,7 +128,7 @@ export class AdminController {
     }
 
     @Delete('categories/:id')
-    async deleteCategory(@Param('id') id: number) {
+    async deleteCategory(@Param('id', ParseIntPipe) id: number) {
         await this.adminService.deleteCategory(id);
         return successResponse(null, 'Category deleted successfully');
     }
@@ -137,7 +140,7 @@ export class AdminController {
     }
 
     @Get('services/:id')
-    async getService(@Param('id') id: number) {
+    async getService(@Param('id', ParseIntPipe) id: number) {
         const service = await this.adminService.getService(id);
         return successResponse(service);
     }
@@ -149,13 +152,13 @@ export class AdminController {
     }
 
     @Patch('services/update/:id')
-    async updateService(@Param('id') id: number, @Body() data: any) {
+    async updateService(@Param('id', ParseIntPipe) id: number, @Body() data: any) {
         const result = await this.adminService.updateService(id, data);
         return successResponse(result, 'Service updated successfully');
     }
 
     @Delete('services/:id')
-    async deleteService(@Param('id') id: number) {
+    async deleteService(@Param('id', ParseIntPipe) id: number) {
         await this.adminService.deleteService(id);
         return successResponse(null, 'Service deleted successfully');
     }
@@ -168,7 +171,7 @@ export class AdminController {
 
     @Post('enquiries/update-status/:id')
     async updateEnquiryStatus(
-        @Param('id') id: number,
+        @Param('id', ParseIntPipe) id: number,
         @Body('status') status: string,
     ) {
         const enquiry = await this.adminService.updateEnquiryStatus(id, status);
@@ -176,7 +179,7 @@ export class AdminController {
     }
 
     @Delete('enquiries/:id')
-    async deleteEnquiry(@Param('id') id: number) {
+    async deleteEnquiry(@Param('id', ParseIntPipe) id: number) {
         await this.adminService.deleteEnquiry(id);
         return successResponse(null, 'Enquiry deleted successfully');
     }
@@ -190,14 +193,14 @@ export class AdminController {
     }
 
     @Get('service-applications/:id')
-    async getServiceApplication(@Param('id') id: number) {
+    async getServiceApplication(@Param('id', ParseIntPipe) id: number) {
         const result = await this.adminService.getServiceApplication(id);
         return successResponse(result);
     }
 
     @Post('service-applications/:id/status')
     async updateApplicationStatus(
-        @Param('id') id: number,
+        @Param('id', ParseIntPipe) id: number,
         @Body() data: UpdateApplicationStatusInput,
     ) {
         const result = await this.adminService.updateApplicationStatus(
@@ -237,7 +240,7 @@ export class AdminController {
     @Post('service-applications/:id/upload-certificate')
     @UseInterceptors(FileInterceptor('certificate'))
     async uploadCertificate(
-        @Param('id') id: number,
+        @Param('id', ParseIntPipe) id: number,
         @UploadedFile() file: { originalname: string } | undefined,
     ) {
         if (!file) throw new BadRequestException('File is required');
@@ -249,19 +252,19 @@ export class AdminController {
     }
 
     @Get('regional-managers/:id/details')
-    async getRegionalManagerDetails(@Param('id') id: number) {
+    async getRegionalManagerDetails(@Param('id', ParseIntPipe) id: number) {
         const result = await this.adminService.getRegionalManagerDetails(id);
         return successResponse(result);
     }
 
     @Get('accountants/:id/details')
-    async getAccountantDetails(@Param('id') id: number) {
+    async getAccountantDetails(@Param('id', ParseIntPipe) id: number) {
         const result = await this.adminService.getAccountantDetails(id);
         return successResponse(result);
     }
 
     @Get('users/:id/details')
-    async getUserDetails(@Param('id') id: number) {
+    async getUserDetails(@Param('id', ParseIntPipe) id: number) {
         const result = await this.adminService.getUserDetails(id);
         return successResponse(result);
     }

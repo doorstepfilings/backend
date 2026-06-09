@@ -249,8 +249,9 @@ export class UserServicesService {
     ];
 
     if (disallowedStatuses.includes(userService.status)) {
+      const statusLabel = UserServicesService.STATUS_LABELS[userService.status] || userService.status;
       throw new BadRequestException(
-        `Documents cannot be uploaded when request is in '${userService.status}' status.`,
+        `You cannot upload documents while the application is in the '${statusLabel}' stage.`,
       );
     }
 
@@ -294,7 +295,7 @@ export class UserServicesService {
         userService.status,
       )
     ) {
-      throw new BadRequestException('Only new applications can be removed.');
+      throw new BadRequestException('Only draft or newly submitted applications can be removed.');
     }
 
     const payments = await this.prisma.payment.findMany({
@@ -306,7 +307,7 @@ export class UserServicesService {
     );
 
     if (hasCompletedPayment) {
-      throw new BadRequestException('Paid applications cannot be removed.');
+      throw new BadRequestException('You cannot remove a service application that has already been paid for.');
     }
 
     for (const document of userService.requestDocuments ?? []) {
@@ -339,8 +340,9 @@ export class UserServicesService {
     const lockedStatuses = ['approved', 'completed', 'rejected', 'cancelled'];
 
     if (lockedStatuses.includes(userService.status)) {
+      const statusLabel = UserServicesService.STATUS_LABELS[userService.status] || userService.status;
       throw new BadRequestException(
-        `Documents cannot be deleted while the request is in '${userService.status}' status.`,
+        `Documents cannot be deleted while the application is in the '${statusLabel}' stage.`,
       );
     }
 
@@ -380,19 +382,38 @@ export class UserServicesService {
     in_cart: ['applied', 'payment_pending', 'cancelled', 'draft'], // legacy
     payment_pending: ['paid', 'cancelled', 'applied'],
     paid: ['applied', 'document_collection', 'under_review', 'cancelled'],
-    applied: ['document_collection', 'under_review', 'completed', 'cancelled', 'rejected'],
-    pending: ['applied', 'document_collection', 'under_review', 'cancelled', 'rejected'], // legacy
-    document_collection: ['under_review', 'update_required', 'cancelled'],
-    under_review: ['update_required', 'in_progress', 'document_collection', 'completed', 'cancelled', 'rejected'],
-    update_required: ['under_review', 'document_collection', 'cancelled'],
-    revision_requested: ['under_review', 'update_required', 'cancelled'], // legacy
-    in_progress: ['under_review', 'completed', 'cancelled', 'rejected', 'update_required'],
-    processing: ['in_progress', 'completed', 'cancelled'], // legacy
-    submitted_to_ca: ['under_review', 'in_progress', 'completed', 'applied', 'document_collection', 'update_required', 'cancelled'], // legacy escape hatch
-    approved: ['completed'], // legacy
-    completed: [],
+    applied: ['document_collection', 'under_review', 'completed', 'cancelled', 'rejected', 'approved'],
+    pending: ['applied', 'document_collection', 'under_review', 'cancelled', 'rejected', 'approved'], // legacy
+    document_collection: ['under_review', 'update_required', 'cancelled', 'approved'],
+    under_review: ['update_required', 'in_progress', 'document_collection', 'completed', 'cancelled', 'rejected', 'approved'],
+    update_required: ['under_review', 'document_collection', 'cancelled', 'approved'],
+    revision_requested: ['under_review', 'update_required', 'cancelled', 'approved'], // legacy
+    in_progress: ['under_review', 'completed', 'cancelled', 'rejected', 'update_required', 'approved'],
+    processing: ['in_progress', 'completed', 'cancelled', 'approved'], // legacy
+    submitted_to_ca: ['under_review', 'in_progress', 'completed', 'applied', 'document_collection', 'update_required', 'cancelled', 'approved'], // legacy escape hatch
+    approved: ['completed', 'in_progress', 'under_review', 'update_required'],
+    completed: ['approved', 'in_progress', 'under_review', 'update_required'],
     cancelled: ['applied', 'draft'],
     rejected: ['applied', 'draft'],
+  };
+
+  static readonly STATUS_LABELS: Record<string, string> = {
+    in_cart: 'In Cart',
+    payment_pending: 'Payment Pending',
+    paid: 'Paid',
+    applied: 'Initial Submission',
+    pending: 'Pending',
+    document_collection: 'Document Collection',
+    under_review: 'Verification Stage',
+    update_required: 'Correction Required',
+    revision_requested: 'Revision Requested',
+    in_progress: 'Processing Stage',
+    processing: 'Processing',
+    submitted_to_ca: 'Submitted to CA',
+    approved: 'Approved',
+    completed: 'Completed',
+    cancelled: 'Cancelled',
+    rejected: 'Rejected',
   };
 
   canTransitionTo(current: string, next: string): boolean {
@@ -410,9 +431,33 @@ export class UserServicesService {
     });
 
     if (!this.canTransitionTo(userService.status, data.status)) {
-      throw new BadRequestException(
-        `Invalid status transition from ${userService.status} to ${data.status}`,
-      );
+      const currentLabel = UserServicesService.STATUS_LABELS[userService.status] || userService.status;
+      const nextLabel = UserServicesService.STATUS_LABELS[data.status] || data.status;
+      
+      let friendlyMessage = `Cannot change application status from '${currentLabel}' to '${nextLabel}'.`;
+      
+      if (userService.status === 'update_required') {
+        friendlyMessage = `This application is currently waiting for client corrections. You cannot approve, complete, or process it until the client submits the requested updates.`;
+      } else if (userService.status === 'completed') {
+        friendlyMessage = `This application has already been Completed and finalized. Its status cannot be updated.`;
+      } else if (userService.status === 'cancelled') {
+        friendlyMessage = `This application has been Cancelled and cannot be updated.`;
+      } else if (userService.status === 'rejected') {
+        friendlyMessage = `This application has been Rejected and cannot be updated.`;
+      } else {
+        const allowedNext = UserServicesService.STATUS_FLOW[userService.status] || [];
+        const allowedLabels = allowedNext.map(status => `'${UserServicesService.STATUS_LABELS[status] || status}'`);
+        
+        if (allowedLabels.length === 0) {
+          friendlyMessage = `This application is currently in the '${currentLabel}' stage and cannot be moved to any other stage.`;
+        } else if (allowedLabels.length === 1) {
+          friendlyMessage = `This application is currently in the '${currentLabel}' stage. At this point, the only allowed next step is to move it to ${allowedLabels[0]}.`;
+        } else {
+          friendlyMessage = `This application is currently in the '${currentLabel}' stage. From here, you can only transition it to one of the following stages: ${allowedLabels.join(', ')}.`;
+        }
+      }
+
+      throw new BadRequestException(friendlyMessage);
     }
 
     const updateData: any = { status: data.status };
@@ -426,9 +471,11 @@ export class UserServicesService {
       updateData.verified = true;
       if (!userService.certificateUrl && !data.certificate_url) {
         throw new BadRequestException(
-          'Certificate URL is required for approval',
+          'A final certificate or document must be uploaded before the application can be approved.',
         );
       }
+    } else if (['in_progress', 'under_review', 'update_required', 'document_collection', 'applied', 'pending', 'revision_requested'].includes(data.status)) {
+      updateData.verified = false;
     }
 
     await this.prisma.userService.update({

@@ -78,7 +78,7 @@ describe('apply-service request parser', () => {
                 document_category: null,
                 document_type: null,
                 existing_document_id: null,
-                is_final: false,
+                is_final: undefined,
                 notes: 'Front side',
                 service_document_id: 51,
                 source_document_id: null,
@@ -88,7 +88,47 @@ describe('apply-service request parser', () => {
                 document_category: null,
                 document_type: null,
                 existing_document_id: null,
-                is_final: false,
+                is_final: undefined,
+                notes: 'Back side',
+                service_document_id: 77,
+                source_document_id: null,
+                type: 'PAN Card',
+            },
+        ]);
+    });
+
+    it('parses object-style nested document metadata fields', () => {
+        const metadata = parseApplyServiceDocumentMetadata({
+            documents: {
+                '1': {
+                    notes: 'Back side',
+                    service_document_id: '77',
+                    type: 'PAN Card',
+                },
+                '0': {
+                    notes: 'Front side',
+                    service_document_id: '51',
+                    type: 'Aadhaar Card',
+                },
+            },
+        });
+
+        expect(metadata).toEqual([
+            {
+                document_category: null,
+                document_type: null,
+                existing_document_id: null,
+                is_final: undefined,
+                notes: 'Front side',
+                service_document_id: 51,
+                source_document_id: null,
+                type: 'Aadhaar Card',
+            },
+            {
+                document_category: null,
+                document_type: null,
+                existing_document_id: null,
+                is_final: undefined,
                 notes: 'Back side',
                 service_document_id: 77,
                 source_document_id: null,

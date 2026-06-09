@@ -133,7 +133,7 @@ export class AuthService {
       });
 
       if (!regionalManager || regionalManager.role !== 'regional_manager') {
-        throw new BadRequestException('Invalid Regional Manager ID.');
+        throw new BadRequestException('Invalid Relationship Manager ID.');
       }
       regionalManagerId = regionalManager.id;
     }
@@ -158,7 +158,7 @@ export class AuthService {
 
       if (assignedUserCount >= 20) {
         throw new BadRequestException(
-          'The selected Regional Manager has reached their user limit.',
+          'The selected Relationship Manager has reached their user limit.',
         );
       }
     }

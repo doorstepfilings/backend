@@ -113,6 +113,95 @@ export class AdminService {
     return locationData;
   }
 
+  private assertRegionalManagerLocation(data: UserLocationInput = {}) {
+    const state = this.normalizeOptionalText(data.state);
+    if (!state) {
+      throw new BadRequestException('State is required to generate RM ID');
+    }
+  }
+
+  private getRegionalManagerIdPrefix(location: UserLocationInput) {
+    return UniqueIDGenerator.generateUserUniqueID('regional_manager', {
+      ...location,
+      series: 1,
+    }).slice(0, -4);
+  }
+
+  private async generateNextRegionalManagerUniqueId(
+    location: UserLocationInput = {},
+  ) {
+    this.assertRegionalManagerLocation(location);
+
+    const prefix = this.getRegionalManagerIdPrefix(location);
+    const existingIds = await this.prisma.user.findMany({
+      where: { rmUniqueId: { startsWith: prefix } },
+      select: { rmUniqueId: true },
+    });
+
+    const latestSeries = existingIds.reduce((latest, user) => {
+      const rmUniqueId = user.rmUniqueId;
+      if (!rmUniqueId || rmUniqueId.length !== prefix.length + 4) {
+        return latest;
+      }
+
+      const seriesCode = rmUniqueId.slice(prefix.length);
+      if (!/^\d{4}$/.test(seriesCode)) {
+        return latest;
+      }
+
+      return Math.max(latest, Number(seriesCode));
+    }, 0);
+
+    for (
+      let series = latestSeries + 1;
+      series <= latestSeries + 10 && series <= 9999;
+      series += 1
+    ) {
+      const candidate = UniqueIDGenerator.generateUserUniqueID(
+        'regional_manager',
+        {
+          ...location,
+          series,
+        },
+      );
+      const existing = await this.prisma.user.findFirst({
+        where: { rmUniqueId: candidate },
+        select: { id: true },
+      });
+
+      if (!existing) {
+        return candidate;
+      }
+    }
+
+    throw new BadRequestException(
+      'Unable to generate a unique regional_manager ID',
+    );
+  }
+
+  private async generateUniqueUserUniqueId(
+    role: 'regional_manager' | 'accountant',
+    location: UserLocationInput = {},
+  ) {
+    if (role === 'regional_manager') {
+      return this.generateNextRegionalManagerUniqueId(location);
+    }
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const candidate = UniqueIDGenerator.generateUserUniqueID(role, location);
+      const existing = await this.prisma.user.findFirst({
+        where: { accountantUniqueId: candidate },
+        select: { id: true },
+      });
+
+      if (!existing) {
+        return candidate;
+      }
+    }
+
+    throw new BadRequestException(`Unable to generate a unique ${role} ID`);
+  }
+
   // ─── User Management ──────────────────────────────────────────────────────
 
   async getUsers(role?: string) {
@@ -178,11 +267,12 @@ export class AdminService {
     };
 
     if (data.role === 'regional_manager') {
+      this.assertRegionalManagerLocation(data);
       userData.rmUniqueId =
-        UniqueIDGenerator.generateUserUniqueID('regional_manager');
+        await this.generateUniqueUserUniqueId('regional_manager', data);
     } else if (data.role === 'accountant') {
       userData.accountantUniqueId =
-        UniqueIDGenerator.generateUserUniqueID('accountant');
+        await this.generateUniqueUserUniqueId('accountant');
     }
 
     const saved = await this.prisma.user.create({ data: userData });
@@ -338,6 +428,8 @@ export class AdminService {
   }
 
   async updateRole(id: number, roleOrData: string | UpdateRoleInput) {
+    id = this.normalizeInteger(id, 'id');
+
     const user = (await this.prisma.user.findUniqueOrThrow({
       where: { id },
       include: { assignedUsers: true, assignedAccountants: true },
@@ -382,11 +474,31 @@ export class AdminService {
 
     // Auto-generate unique IDs on role promotion
     if (role === 'regional_manager' && !user.rmUniqueId) {
+      const location = {
+        address:
+          typeof roleOrData !== 'string' && roleOrData.address !== undefined
+            ? roleOrData.address
+            : user.address,
+        city:
+          typeof roleOrData !== 'string' && roleOrData.city !== undefined
+            ? roleOrData.city
+            : user.city,
+        pincode:
+          typeof roleOrData !== 'string' && roleOrData.pincode !== undefined
+            ? roleOrData.pincode
+            : user.pincode,
+        state:
+          typeof roleOrData !== 'string' && roleOrData.state !== undefined
+            ? roleOrData.state
+            : user.state,
+      };
+
+      this.assertRegionalManagerLocation(location);
       updateData.rmUniqueId =
-        UniqueIDGenerator.generateUserUniqueID('regional_manager');
+        await this.generateUniqueUserUniqueId('regional_manager', location);
     } else if (role === 'accountant' && !user.accountantUniqueId) {
       updateData.accountantUniqueId =
-        UniqueIDGenerator.generateUserUniqueID('accountant');
+        await this.generateUniqueUserUniqueId('accountant');
     }
 
     return this.prisma.user.update({

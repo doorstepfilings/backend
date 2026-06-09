@@ -1036,7 +1036,7 @@ async function migrateUsers(
         const rmId = toOptionalInteger(row.rm_id);
         const accountantId = toOptionalInteger(row.accountant_id);
 
-        ensureReferenceExists(rmId, userIds, 'regional manager user');
+        ensureReferenceExists(rmId, userIds, 'relationship manager user');
         ensureReferenceExists(accountantId, userIds, 'accountant user');
 
         await prisma.user.update({

@@ -107,17 +107,29 @@ async function seedUsers(hashedPassword: string) {
     const regionalManager = await prisma.user.upsert({
         where: { email: 'rm@gmail.com' },
         update: {
-            name: 'Regional Manager',
+            name: 'Relationship Manager',
             password: hashedPassword,
             role: 'regional_manager',
+            city: 'Mumbai',
+            state: 'Maharashtra',
+            pincode: '400001',
         },
         create: {
-            name: 'Regional Manager',
+            name: 'Relationship Manager',
             email: 'rm@gmail.com',
             password: hashedPassword,
             role: 'regional_manager',
+            city: 'Mumbai',
+            state: 'Maharashtra',
+            pincode: '400001',
             rmUniqueId: UniqueIDGenerator.generateUserUniqueID(
                 'regional_manager',
+                {
+                    city: 'Mumbai',
+                    pincode: '400001',
+                    series: 1,
+                    state: 'Maharashtra',
+                },
             ),
         },
     });
@@ -128,6 +140,12 @@ async function seedUsers(hashedPassword: string) {
             data: {
                 rmUniqueId: UniqueIDGenerator.generateUserUniqueID(
                     'regional_manager',
+                    {
+                        city: regionalManager.city,
+                        pincode: regionalManager.pincode,
+                        series: 1,
+                        state: regionalManager.state,
+                    },
                 ),
             },
         });

@@ -72,13 +72,19 @@ function isClientVisibleDocument(document: any, ownerUserId?: number | null) {
     return true;
   }
 
-  // 3. Staff Uploads (Accountant/Admin/RM)
-  if (isStaffRole) {
-    // Only show if the document is finalized/approved/verified
+  // For any staff/fallback uploads, certificates and reports MUST be approved or verified to be visible to the client
+  if (
+    ['certificate', 'report'].includes(category) ||
+    looksLikeCertificate(document) ||
+    looksLikeReport(document)
+  ) {
     const status = String(document.status || '').toLowerCase();
     const isReady = ['approved', 'verified'].includes(status);
     if (!isReady) return false;
+  }
 
+  // 3. Staff Uploads (Accountant/Admin/RM)
+  if (isStaffRole) {
     // Only show if explicitly marked as client visible
     if (type === 'client' || type === 'client_document') return true;
     if (category === 'client_document' || category === 'client_visible')
