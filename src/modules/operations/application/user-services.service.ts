@@ -43,7 +43,7 @@ export class UserServicesService {
     private readonly prisma: PrismaService,
     private readonly slotsService: SlotsService,
     private readonly documentUploadService: DocumentUploadService,
-  ) {}
+  ) { }
 
   async getMyServices(userId: number) {
     // Keep newly added cart and payment-pending services visible to the user.
@@ -170,6 +170,7 @@ export class UserServicesService {
           formData: formData as any,
           notes: dto.notes || null,
           amount,
+          accountantId: userService.accountantId ?? user.accountantId,
         },
       });
     } else {
@@ -177,6 +178,7 @@ export class UserServicesService {
         data: {
           userId,
           serviceId: dto.service_id,
+          accountantId: user.accountantId,
           status: USER_SERVICE_PAYMENT_PENDING_STATUS,
           paymentStatus: PAYMENT_STATUS.CREATED,
           formData: formData as any,

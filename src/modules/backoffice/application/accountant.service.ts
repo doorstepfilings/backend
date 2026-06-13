@@ -29,7 +29,19 @@ export class AccountantService {
 
   async getAssignedUsers(accountantId: number) {
     const users = (await this.prisma.user.findMany({
-      where: { accountantId, role: 'user' },
+      where: {
+        role: 'user',
+        OR: [
+          { accountantId },
+          {
+            userServices: {
+              some: {
+                accountantId,
+              },
+            },
+          },
+        ],
+      },
       include: {
         regionalManager: true,
         accountant: true,
@@ -63,7 +75,20 @@ export class AccountantService {
 
   async getUserById(accountantId: number, id: number) {
     const user = (await this.prisma.user.findFirst({
-      where: { id, accountantId, role: 'user' },
+      where: {
+        id,
+        role: 'user',
+        OR: [
+          { accountantId },
+          {
+            userServices: {
+              some: {
+                accountantId,
+              },
+            },
+          },
+        ],
+      },
       include: {
         regionalManager: true,
         accountant: true,
@@ -89,7 +114,14 @@ export class AccountantService {
 
   async listRequests(accountantId: number, status?: string) {
     const where: any = {
-      accountantId,
+      OR: [
+        { accountantId },
+        {
+          user: {
+            accountantId,
+          },
+        },
+      ],
     };
     if (status) {
       where.status = status;
@@ -97,10 +129,6 @@ export class AccountantService {
       where.status = {
         notIn: [
           ...HIDDEN_USER_SERVICE_STATUSES,
-          'approved',
-          'completed',
-          'cancelled',
-          'rejected',
         ],
       };
       where.paymentStatus = { in: getPaidPaymentStatusValues() };
@@ -123,7 +151,17 @@ export class AccountantService {
 
   async showRequest(accountantId: number, id: number) {
     const request = (await this.prisma.userService.findFirst({
-      where: { id, accountantId },
+      where: {
+        id,
+        OR: [
+          { accountantId },
+          {
+            user: {
+              accountantId,
+            },
+          },
+        ],
+      },
       include: {
         user: true,
         service: { include: { category: true } },
@@ -142,7 +180,17 @@ export class AccountantService {
     data: UpdateApplicationStatusInput,
   ) {
     await this.prisma.userService.findFirstOrThrow({
-      where: { id, accountantId },
+      where: {
+        id,
+        OR: [
+          { accountantId },
+          {
+            user: {
+              accountantId,
+            },
+          },
+        ],
+      },
     });
 
     return this.userServicesService.updateApplicationStatus(id, data);
@@ -156,7 +204,17 @@ export class AccountantService {
     notes?: string,
   ) {
     await this.prisma.userService.findFirstOrThrow({
-      where: { id: userServiceId, accountantId },
+      where: {
+        id: userServiceId,
+        OR: [
+          { accountantId },
+          {
+            user: {
+              accountantId,
+            },
+          },
+        ],
+      },
     });
 
     return this.userServicesService.verifyDocument(
@@ -179,11 +237,16 @@ export class AccountantService {
   async deleteDocument(accountantId: number, docId: number) {
     const doc = (await this.prisma.serviceRequestDocument.findUnique({
       where: { id: docId },
-      include: { userService: true, uploadedBy: true },
+      include: { userService: { include: { user: true } }, uploadedBy: true },
     })) as any;
 
     if (!doc) throw new NotFoundException('Document not found');
-    if (doc.userService.accountantId != accountantId) {
+
+    const isAuthorized =
+      doc.userService.accountantId === accountantId ||
+      doc.userService.user?.accountantId === accountantId;
+
+    if (!isAuthorized) {
       throw new UnauthorizedException('Unauthorized');
     }
 
@@ -201,7 +264,17 @@ export class AccountantService {
     files: UploadedDocumentFile[],
   ) {
     const request = await this.prisma.userService.findFirst({
-      where: { id: requestId, accountantId },
+      where: {
+        id: requestId,
+        OR: [
+          { accountantId },
+          {
+            user: {
+              accountantId,
+            },
+          },
+        ],
+      },
     });
 
     if (!request) {
@@ -289,7 +362,17 @@ export class AccountantService {
     docId: number,
   ) {
     const request = await this.prisma.userService.findFirst({
-      where: { id: requestId, accountantId },
+      where: {
+        id: requestId,
+        OR: [
+          { accountantId },
+          {
+            user: {
+              accountantId,
+            },
+          },
+        ],
+      },
     });
 
     if (!request) {
@@ -321,7 +404,17 @@ export class AccountantService {
     }
 
     const request = await this.prisma.userService.findFirst({
-      where: { id: requestId, accountantId },
+      where: {
+        id: requestId,
+        OR: [
+          { accountantId },
+          {
+            user: {
+              accountantId,
+            },
+          },
+        ],
+      },
     });
 
     if (!request) {
