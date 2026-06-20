@@ -254,6 +254,19 @@ export class AccountantService {
       throw new BadRequestException('Accountants cannot delete client documents');
     }
 
+    if (
+      ['client', 'client_document'].includes(
+        String(doc.documentType || '').toLowerCase(),
+      ) &&
+      ['approved', 'verified'].includes(
+        String(doc.status || '').toLowerCase(),
+      )
+    ) {
+      throw new BadRequestException(
+        'Client-approved documents are read-only',
+      );
+    }
+
     await this.documentUploadService.deleteDocumentById(docId);
     return true;
   }
@@ -356,6 +369,94 @@ export class AccountantService {
     return this.showRequest(accountantId, requestId);
   }
 
+  async replaceClientApprovalDocument(
+    accountantId: number,
+    requestId: number,
+    docId: number,
+    file: UploadedDocumentFile | undefined,
+    notes?: string,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Corrected document is required');
+    }
+
+    const document = (await this.prisma.serviceRequestDocument.findFirst({
+      where: {
+        id: docId,
+        userServiceId: requestId,
+      },
+      include: {
+        uploadedBy: true,
+        userService: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    })) as any;
+
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    const isAuthorized =
+      document.userService.accountantId === accountantId ||
+      document.userService.user?.accountantId === accountantId;
+
+    if (!isAuthorized) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+
+    const uploaderRole = String(document.uploadedBy?.role || '').toLowerCase();
+    const documentType = String(document.documentType || '').toLowerCase();
+
+    if (uploaderRole === 'user' || uploaderRole === 'customer') {
+      throw new BadRequestException(
+        'Client-uploaded documents cannot be replaced by the accountant',
+      );
+    }
+
+    if (!['client', 'client_document'].includes(documentType)) {
+      throw new BadRequestException(
+        'Only documents sent for client approval can be replaced',
+      );
+    }
+
+    if (
+      !['rejected', 'correction', 'correction_requested'].includes(
+        String(document.status || '').toLowerCase(),
+      )
+    ) {
+      throw new BadRequestException(
+        'This document is not awaiting an accountant correction',
+      );
+    }
+
+    const accountant = await this.prisma.user.findUnique({
+      where: { id: accountantId },
+    });
+    const trimmedNote = notes?.trim();
+    const responseNote = trimmedNote
+      ? accountant?.name
+        ? `Accountant (${accountant.name}): ${trimmedNote}`
+        : `Accountant: ${trimmedNote}`
+      : '';
+    const existingNotes =
+      typeof document.notes === 'string' ? document.notes.trim() : '';
+    const combinedNotes = [existingNotes, responseNote]
+      .filter(Boolean)
+      .join('\n\n');
+
+    await this.documentUploadService.replaceDocument(
+      document.id,
+      accountantId,
+      file,
+      combinedNotes || undefined,
+    );
+
+    return this.showRequest(accountantId, requestId);
+  }
+
   async deleteDocumentFromRequest(
     accountantId: number,
     requestId: number,
@@ -390,6 +491,19 @@ export class AccountantService {
 
     if (document.uploadedBy?.role === 'user') {
       throw new BadRequestException('Accountants cannot delete client documents');
+    }
+
+    if (
+      ['client', 'client_document'].includes(
+        String(document.documentType || '').toLowerCase(),
+      ) &&
+      ['approved', 'verified'].includes(
+        String(document.status || '').toLowerCase(),
+      )
+    ) {
+      throw new BadRequestException(
+        'Client-approved documents are read-only',
+      );
     }
 
     await this.documentUploadService.deleteDocumentById(docId);

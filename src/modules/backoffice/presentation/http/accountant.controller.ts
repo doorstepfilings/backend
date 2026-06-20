@@ -2,18 +2,23 @@ import {
     Body,
     Controller,
     Delete,
+    FileTypeValidator,
     Get,
+    MaxFileSizeValidator,
     Param,
+    ParseFilePipe,
     ParseIntPipe,
     Patch,
     Post,
     Query,
     Req,
+    UploadedFile,
     UploadedFiles,
     UseGuards,
     UseInterceptors,
 } from '@nestjs/common';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../../../identity/infrastructure/auth/jwt-auth.guard';
 import { Roles } from '../../../identity/infrastructure/auth/roles.decorator';
 import { RolesGuard } from '../../../identity/infrastructure/auth/roles.guard';
@@ -133,6 +138,40 @@ export class AccountantController {
             docId,
         );
         return successResponse(null, 'Document deleted successfully');
+    }
+
+    @Post('service-requests/:id/documents/:docId/replace')
+    @UseInterceptors(FileInterceptor('document'))
+    async replaceClientApprovalDocument(
+        @Req() req: any,
+        @Param('id', ParseIntPipe) id: number,
+        @Param('docId', ParseIntPipe) docId: number,
+        @Body('notes') notes: string | undefined,
+        @UploadedFile(
+            new ParseFilePipe({
+                validators: [
+                    new MaxFileSizeValidator({ maxSize: 1024 * 1024 }),
+                    new FileTypeValidator({
+                        fileType:
+                            /(application\/pdf|image\/jpeg|image\/png)/,
+                    }),
+                ],
+            }),
+        )
+        file: UploadedDocumentFile,
+    ) {
+        const result =
+            await this.accountantService.replaceClientApprovalDocument(
+                req.user.id,
+                id,
+                docId,
+                file,
+                notes,
+            );
+        return successResponse(
+            result,
+            'Corrected document sent for client approval',
+        );
     }
 
     @Post('service-requests/:id/verify-document')

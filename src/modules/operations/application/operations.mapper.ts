@@ -40,6 +40,7 @@ function isClientVisibleDocument(document: any, ownerUserId?: number | null) {
   const type = String(document.documentType || '').toLowerCase();
   const category = String(document.documentCategory || '').toLowerCase();
   const role = String(document.uploadedBy?.role || '').toLowerCase();
+  const status = String(document.status || '').toLowerCase();
 
   const isStaffRole = [
     'accountant',
@@ -58,6 +59,12 @@ function isClientVisibleDocument(document: any, ownerUserId?: number | null) {
     return false;
   }
 
+  // Replaced versions stay available to staff for history, but clients should
+  // only see the current document version regardless of who uploaded it.
+  if (['replaced', 'superseded'].includes(status)) {
+    return false;
+  }
+
   // 2. User/Customer Role (Clients always see their own uploads)
   if (role === 'user' || role === 'customer') {
     return true;
@@ -72,24 +79,30 @@ function isClientVisibleDocument(document: any, ownerUserId?: number | null) {
     return true;
   }
 
+  // Staff documents explicitly sent to the client must remain visible while
+  // pending or awaiting correction, including reports and certificates.
+  if (
+    isStaffRole &&
+    (type === 'client' ||
+      type === 'client_document' ||
+      category === 'client_document' ||
+      category === 'client_visible')
+  ) {
+    return true;
+  }
+
   // For any staff/fallback uploads, certificates and reports MUST be approved or verified to be visible to the client
   if (
     ['certificate', 'report'].includes(category) ||
     looksLikeCertificate(document) ||
     looksLikeReport(document)
   ) {
-    const status = String(document.status || '').toLowerCase();
     const isReady = ['approved', 'verified'].includes(status);
     if (!isReady) return false;
   }
 
   // 3. Staff Uploads (Accountant/Admin/RM)
   if (isStaffRole) {
-    // Only show if explicitly marked as client visible
-    if (type === 'client' || type === 'client_document') return true;
-    if (category === 'client_document' || category === 'client_visible')
-      return true;
-
     // Certificates and Reports are usually deliverables
     if (['certificate', 'report'].includes(category)) return true;
 
@@ -177,6 +190,18 @@ export function toUserServiceResource(
     requestDocuments = requestDocuments.filter((doc: any) => {
       const status = String(doc.status || '').toLowerCase();
       const category = String(doc.documentCategory || '').toLowerCase();
+      const documentType = String(doc.documentType || '').toLowerCase();
+      const uploaderRole = String(doc.uploadedBy?.role || '').toLowerCase();
+      const isStaffClientApprovalDocument =
+        [
+          'accountant',
+          'admin',
+          'super_admin',
+          'regional_manager',
+          'rm',
+          'employee',
+        ].includes(uploaderRole) &&
+        ['client', 'client_document'].includes(documentType);
 
       // If we have an approved version of this category (like 'report'), hide the pending ones
       if (
@@ -189,7 +214,8 @@ export function toUserServiceResource(
       // Hide all pending certificates and reports from clients if they aren't approved yet
       if (
         status === 'pending' &&
-        (category === 'report' || category === 'certificate')
+        (category === 'report' || category === 'certificate') &&
+        !isStaffClientApprovalDocument
       ) {
         return false;
       }
@@ -197,7 +223,8 @@ export function toUserServiceResource(
       // If the whole service is approved/completed, hide remaining pending documents from the client view
       if (
         ['approved', 'completed'].includes(userService.status) &&
-        status === 'pending'
+        status === 'pending' &&
+        !isStaffClientApprovalDocument
       ) {
         return false;
       }
@@ -230,7 +257,8 @@ export function toUserServiceResource(
     invoice_unique_id: userService.latestPayment?.invoiceUniqueId ?? null,
     payment_id: userService.latestPayment?.id ?? null,
     order_created_at: userService.latestPayment?.createdAt ?? null,
-    transaction_id: userService.latestPayment?.paymentProviderTransactionId ?? null,
+    transaction_id:
+      userService.latestPayment?.paymentProviderTransactionId ?? null,
     payment_method: userService.latestPayment?.paymentMethod ?? null,
     status: userService.status,
     payment_status: normalizePaymentStatus(userService.paymentStatus),

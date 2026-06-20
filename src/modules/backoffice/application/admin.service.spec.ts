@@ -3,6 +3,7 @@ import { AdminService } from './admin.service';
 describe('AdminService RM ID generation', () => {
   let prismaMock: any;
   let notificationServiceMock: any;
+  let documentUploadServiceMock: any;
   let service: AdminService;
 
   beforeEach(() => {
@@ -18,15 +19,22 @@ describe('AdminService RM ID generation', () => {
         findUniqueOrThrow: jest.fn(),
         update: jest.fn(({ data }) => Promise.resolve({ id: 5, ...data })),
       },
+      serviceRequestDocument: {
+        findFirst: jest.fn(),
+      },
     };
     notificationServiceMock = {
       sendWelcomeNotification: jest.fn().mockResolvedValue(undefined),
+    };
+    documentUploadServiceMock = {
+      replaceDocument: jest.fn(),
     };
 
     service = new AdminService(
       prismaMock as any,
       {} as any,
       notificationServiceMock as any,
+      documentUploadServiceMock as any,
     );
   });
 
@@ -82,5 +90,53 @@ describe('AdminService RM ID generation', () => {
       }),
       where: { id: 5 },
     });
+  });
+
+  it('creates a corrected client-approval version and retires the rejected version', async () => {
+    prismaMock.serviceRequestDocument.findFirst.mockResolvedValue({
+      id: 77,
+      userServiceId: 30,
+      uploadedBy: {
+        id: 8,
+        role: 'accountant',
+      },
+      documentCategory: null,
+      documentName: 'Review Report',
+      documentType: 'client',
+      fileName: 'review-v1.pdf',
+      notes: 'Client (Krishna): Please correct this',
+      serviceDocumentId: null,
+      status: 'rejected',
+    });
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 1,
+      name: 'Super Admin',
+    });
+    documentUploadServiceMock.replaceDocument.mockResolvedValue({ id: 77 });
+    jest
+      .spyOn(service, 'getServiceApplication')
+      .mockResolvedValue({ id: 30 } as any);
+
+    const file = {
+      buffer: Buffer.from('corrected pdf'),
+      mimetype: 'application/pdf',
+      originalname: 'review-v2.pdf',
+      size: 1024,
+    };
+
+    await service.replaceClientApprovalDocument(
+      1,
+      30,
+      77,
+      file,
+      'Corrected as requested',
+    );
+
+    expect(documentUploadServiceMock.replaceDocument).toHaveBeenCalledWith(
+      77,
+      1,
+      file,
+      'Client (Krishna): Please correct this\n\nAdmin (Super Admin): Corrected as requested',
+    );
   });
 });

@@ -5,6 +5,7 @@ import {
     Post,
     Body,
     UseGuards,
+    Patch,
     UseInterceptors,
     UploadedFiles,
     Param,
@@ -92,6 +93,33 @@ export class UserServicesController {
         await this.userServicesService.deleteMyService(authUser.userId, id);
 
         return successResponse(null, 'Service removed successfully');
+    }
+
+    @UseGuards(JwtAuthGuard)
+    @Patch('my-services/:id/documents/:docId/client-approval')
+    async respondToDocumentClientApproval(
+        @CurrentAuthUser() authUser: { userId: number },
+        @Param('id', ParseIntPipe) id: number,
+        @Param('docId', ParseIntPipe) docId: number,
+        @Body()
+        body: {
+            action?: string;
+            client_approval_status?: string;
+            correction_note?: string;
+            note?: string;
+            remark?: string;
+            status?: string;
+        },
+    ) {
+        const result =
+            await this.userServicesService.respondToDocumentClientApproval(
+                authUser.userId,
+                id,
+                docId,
+                body,
+            );
+
+        return successResponse(result, 'Document approval updated successfully');
     }
 
     @UseGuards(JwtAuthGuard)

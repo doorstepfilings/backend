@@ -15,6 +15,7 @@ describe('UserServicesService', () => {
         findUnique: jest.fn(),
       },
       userService: {
+        delete: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn(),
         findUnique: jest.fn(),
@@ -26,6 +27,7 @@ describe('UserServicesService', () => {
         findUniqueOrThrow: jest.fn(),
       },
       payment: {
+        deleteMany: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
       },
       serviceRequestDocument: {
@@ -189,5 +191,48 @@ describe('UserServicesService', () => {
       BadRequestException,
     );
     expect(prismaMock.payment.findMany).not.toHaveBeenCalled();
+  });
+
+  it('allows deleting an unpaid draft service request', async () => {
+    prismaMock.userService.findUnique.mockResolvedValue({
+      id: 89,
+      requestDocuments: [],
+      status: 'draft',
+      userId: 7,
+    });
+
+    await expect(service.deleteMyService(7, 89)).resolves.toBe(true);
+
+    expect(prismaMock.payment.deleteMany).not.toHaveBeenCalled();
+    expect(prismaMock.userService.delete).toHaveBeenCalledWith({
+      where: { id: 89 },
+    });
+  });
+
+  it('filters admin applications by the selected local date and newest first', async () => {
+    await service.getAllServices('all', '2026-06-20', -330);
+
+    expect(prismaMock.userService.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        where: {
+          createdAt: {
+            gte: new Date('2026-06-19T18:30:00.000Z'),
+            lt: new Date('2026-06-20T18:30:00.000Z'),
+          },
+          status: {
+            notIn: ['in_cart', 'payment_pending'],
+          },
+        },
+      }),
+    );
+  });
+
+  it('rejects an invalid admin application date', async () => {
+    await expect(
+      service.getAllServices('all', '2026-02-30', -330),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(prismaMock.userService.findMany).not.toHaveBeenCalled();
   });
 });

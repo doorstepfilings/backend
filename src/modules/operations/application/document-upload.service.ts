@@ -139,6 +139,87 @@ export class DocumentUploadService {
         return this.deleteDocumentRecord(doc);
     }
 
+    async replaceDocument(
+        docId: number,
+        uploadedById: number,
+        file: UploadedDocumentFile,
+        notes?: string,
+    ) {
+        const document = await this.prisma.serviceRequestDocument.findUnique({
+            where: { id: docId },
+        });
+
+        if (!document) {
+            throw new BadRequestException('Document not found');
+        }
+
+        const folder = `service_documents/${uploadedById}/${document.userServiceId}`;
+        const fullFolder = path.join(this.uploadRoot, folder);
+        if (!fs.existsSync(fullFolder)) {
+            fs.mkdirSync(fullFolder, { recursive: true });
+        }
+
+        const extension = path.extname(file.originalname).replace('.', '');
+        const storedFileName = `${Date.now()}_${file.originalname}`;
+        const filePath = path.posix.join(folder, storedFileName);
+        const fullPath = path.join(this.uploadRoot, ...filePath.split('/'));
+
+        fs.writeFileSync(fullPath, file.buffer);
+
+        try {
+            const updated = await this.prisma.serviceRequestDocument.update({
+                where: { id: document.id },
+                data: {
+                    uploadedById,
+                    fileName: file.originalname,
+                    filePath,
+                    fileExtension: extension || null,
+                    fileSize: BigInt(file.size),
+                    mimeType: file.mimetype,
+                    notes: notes ?? document.notes,
+                    sourceDocumentId: null,
+                    status: 'pending',
+                    version: document.version + 1,
+                },
+            });
+
+            if (document.filePath !== filePath) {
+                this.deletePhysicalFile(document.filePath);
+            }
+
+            if (document.userServiceId) {
+                const userService = await this.prisma.userService.findUnique({
+                    where: { id: document.userServiceId },
+                });
+
+                if (userService?.documents) {
+                    const currentDocs = userService.documents as Record<
+                        string,
+                        string
+                    >;
+                    const entries = Object.entries(currentDocs).map(
+                        ([key, value]) => [
+                            key,
+                            value === document.filePath ? filePath : value,
+                        ],
+                    );
+
+                    await this.prisma.userService.update({
+                        where: { id: document.userServiceId },
+                        data: {
+                            documents: Object.fromEntries(entries) as any,
+                        },
+                    });
+                }
+            }
+
+            return updated;
+        } catch (error) {
+            this.deletePhysicalFile(filePath);
+            throw error;
+        }
+    }
+
     private resolveDocumentType(documentType?: string | null) {
         if (!documentType) {
             return 'client';
@@ -178,10 +259,25 @@ export class DocumentUploadService {
         return (existing._max.version ?? 0) + 1;
     }
 
+    deletePhysicalFile(filePath: string) {
+        try {
+            const fullPath = path.join(this.uploadRoot, ...filePath.split('/'));
+            if (fs.existsSync(fullPath)) {
+                fs.unlinkSync(fullPath);
+            }
+        } catch (error) {
+            console.error(`Failed to delete physical file: ${filePath}`, error);
+        }
+    }
+
     private async deleteDocumentRecord(doc: any) {
         const fullPath = path.join(this.uploadRoot, ...doc.filePath.split('/'));
         if (fs.existsSync(fullPath)) {
-            fs.unlinkSync(fullPath);
+            try {
+                fs.unlinkSync(fullPath);
+            } catch (error) {
+                console.error(`Failed to delete file from disk: ${fullPath}`, error);
+            }
         }
 
         const userService = await this.prisma.userService.findUnique({

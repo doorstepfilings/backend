@@ -37,6 +37,18 @@ export type UpdateApplicationStatusInput = {
   update_note?: string;
 };
 
+export type ClientDocumentApprovalInput = {
+  action?: string;
+  client_approval_status?: string;
+  correction_note?: string;
+  note?: string;
+  remark?: string;
+  status?: string;
+};
+
+const NOTE_AUTHOR_PATTERN =
+  /^(Accountant|Admin|Super_Admin|SuperAdmin|Super\s+Admin|You|User|Client|System)(?:\s*\(.*?\))?:/i;
+
 @Injectable()
 export class UserServicesService {
   constructor(
@@ -292,11 +304,14 @@ export class UserServicesService {
       throw new NotFoundException('Service request not found');
     }
 
-    if (
-      !['applied', 'in_cart', USER_SERVICE_PAYMENT_PENDING_STATUS].includes(
-        userService.status,
-      )
-    ) {
+    const removableStatuses = [
+      'draft',
+      'applied',
+      'in_cart',
+      USER_SERVICE_PAYMENT_PENDING_STATUS,
+    ];
+
+    if (!removableStatuses.includes(userService.status)) {
       throw new BadRequestException('Only draft or newly submitted applications can be removed.');
     }
 
@@ -353,9 +368,20 @@ export class UserServicesService {
     return true;
   }
 
-  async getAllServices(status?: string) {
+  async getAllServices(
+    status?: string,
+    applicationDate?: string,
+    timezoneOffsetMinutes = 0,
+  ) {
+    const createdAt = this.resolveApplicationDateFilter(
+      applicationDate,
+      timezoneOffsetMinutes,
+    );
     const services = (await this.prisma.userService.findMany({
-      where: buildAdminApplicationWhere(status),
+      where: {
+        ...buildAdminApplicationWhere(status),
+        ...(createdAt ? { createdAt } : {}),
+      },
       include: {
         accountant: true,
         service: {
@@ -366,16 +392,60 @@ export class UserServicesService {
         },
         user: true,
       },
-      orderBy: {
-        createdAt: 'desc',
-      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     })) as any[];
 
     await this.populateRequestDocuments(services);
     await this.populateLatestPayments(services);
-    this.sortByLatestOrderFirst(services);
 
     return services.map((service) => toUserServiceResource(service));
+  }
+
+  private resolveApplicationDateFilter(
+    applicationDate?: string,
+    timezoneOffsetMinutes = 0,
+  ) {
+    if (!applicationDate) {
+      return null;
+    }
+
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(applicationDate);
+    if (!match) {
+      throw new BadRequestException(
+        'Application date must use YYYY-MM-DD format',
+      );
+    }
+
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const utcDate = new Date(Date.UTC(year, month - 1, day));
+
+    if (
+      utcDate.getUTCFullYear() !== year ||
+      utcDate.getUTCMonth() !== month - 1 ||
+      utcDate.getUTCDate() !== day
+    ) {
+      throw new BadRequestException('Application date is invalid');
+    }
+
+    if (
+      !Number.isFinite(timezoneOffsetMinutes) ||
+      timezoneOffsetMinutes < -840 ||
+      timezoneOffsetMinutes > 840
+    ) {
+      throw new BadRequestException('Timezone offset is invalid');
+    }
+
+    const start = new Date(
+      Date.UTC(year, month - 1, day) + timezoneOffsetMinutes * 60_000,
+    );
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+
+    return {
+      gte: start,
+      lt: end,
+    };
   }
 
   // Status State Machine
@@ -524,6 +594,27 @@ export class UserServicesService {
       throw new NotFoundException('Document not found in this request');
     }
 
+    const documentType = String(document.documentType || '').toLowerCase();
+    const uploaderRole = String(document.uploadedBy?.role || '').toLowerCase();
+    const documentStatus = String(document.status || '').toLowerCase();
+    const isApprovedClientDelivery =
+      ['client', 'client_document'].includes(documentType) &&
+      [
+        'accountant',
+        'admin',
+        'super_admin',
+        'regional_manager',
+        'rm',
+        'employee',
+      ].includes(uploaderRole) &&
+      ['approved', 'verified'].includes(documentStatus);
+
+    if (isApprovedClientDelivery) {
+      throw new BadRequestException(
+        'Client-approved documents are read-only',
+      );
+    }
+
     await this.prisma.serviceRequestDocument.update({
       where: { id: docId },
       data: { status, notes: notes || undefined },
@@ -545,6 +636,136 @@ export class UserServicesService {
     await this.populateLatestPayments(userService);
 
     return toUserServiceResource(userService);
+  }
+
+  async respondToDocumentClientApproval(
+    userId: number,
+    userServiceId: number,
+    docId: number,
+    data: ClientDocumentApprovalInput,
+  ) {
+    const userService = (await this.prisma.userService.findFirst({
+      where: { id: userServiceId, userId },
+      include: {
+        service: { include: { category: true, documents: true } },
+        user: true,
+        accountant: true,
+      },
+    })) as any;
+
+    if (!userService) {
+      throw new NotFoundException('Service request not found');
+    }
+
+    const document = (await this.prisma.serviceRequestDocument.findFirst({
+      where: { id: docId, userServiceId },
+      include: { uploadedBy: true },
+    })) as any;
+
+    if (!document) {
+      throw new NotFoundException('Document not found in this request');
+    }
+
+    if (String(document.uploadedById) === String(userId)) {
+      throw new BadRequestException(
+        'You cannot approve your own uploaded document',
+      );
+    }
+
+    const documentType = String(document.documentType || '').toLowerCase();
+    if (!['client', 'client_document'].includes(documentType)) {
+      throw new BadRequestException(
+        'Only client-visible documents can be approved by the client',
+      );
+    }
+
+    const approvalStatus = this.resolveClientApprovalStatus(data);
+    const note = this.formatClientApprovalNote(
+      this.resolveClientApprovalNote(data),
+      userService.user?.name,
+    );
+
+    if (approvalStatus === 'rejected' && !note) {
+      throw new BadRequestException('Correction note is required');
+    }
+
+    const notes = note
+      ? this.appendDocumentNote(document.notes, note)
+      : undefined;
+
+    await this.prisma.serviceRequestDocument.update({
+      where: { id: docId },
+      data: {
+        status: approvalStatus,
+        ...(notes ? { notes } : {}),
+      },
+    });
+
+    const refreshed = (await this.prisma.userService.findUniqueOrThrow({
+      where: { id: userServiceId },
+      include: {
+        service: { include: { category: true, documents: true } },
+        user: true,
+        accountant: true,
+      },
+    })) as any;
+
+    await this.populateRequestDocuments(refreshed);
+    await this.populateLatestPayments(refreshed);
+
+    return toUserServiceResource(refreshed, {
+      includeInternalDocuments: false,
+      ownerUserId: userId,
+    });
+  }
+
+  private resolveClientApprovalStatus(data: ClientDocumentApprovalInput) {
+    const rawStatus = String(
+      data.client_approval_status ?? data.action ?? data.status ?? '',
+    ).toLowerCase();
+
+    if (['approved', 'approve', 'verified', 'verify'].includes(rawStatus)) {
+      return 'approved' as const;
+    }
+
+    if (
+      [
+        'correction',
+        'correction_requested',
+        'changes_requested',
+        'rejected',
+        'reject',
+      ].includes(rawStatus)
+    ) {
+      return 'rejected' as const;
+    }
+
+    throw new BadRequestException('Invalid document approval action');
+  }
+
+  private resolveClientApprovalNote(data: ClientDocumentApprovalInput) {
+    const note = data.correction_note ?? data.note ?? data.remark;
+    return typeof note === 'string' ? note.trim() : '';
+  }
+
+  private formatClientApprovalNote(note: string, clientName?: string | null) {
+    if (!note) return '';
+    if (NOTE_AUTHOR_PATTERN.test(note)) return note;
+    return clientName ? `Client (${clientName}): ${note}` : `Client: ${note}`;
+  }
+
+  private appendDocumentNote(existingNote: unknown, nextNote: string) {
+    const existing =
+      typeof existingNote === 'string' && existingNote.trim()
+        ? existingNote.trim()
+        : '';
+
+    if (!existing) return nextNote;
+    if (existing.split('\n\n').some((entry) => entry.trim() === nextNote)) {
+      return existing;
+    }
+
+    return `${existing}\n\n${nextNote}`;
   }
 
   async markVerified(id: number, verified: boolean) {

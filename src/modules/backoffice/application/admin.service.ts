@@ -16,6 +16,10 @@ import { UniqueIDGenerator } from '../../../shared/utils/unique-id.generator';
 import { NotificationService } from '../../communication/notification.service';
 import type { UpdateApplicationStatusInput } from '../../operations/application/user-services.service';
 import { toUserServiceResource } from '../../operations/application/operations.mapper';
+import {
+  DocumentUploadService,
+  type UploadedDocumentFile,
+} from '../../operations/application/document-upload.service';
 import { toEnquiryResource } from '../../customer/application/customer.mapper';
 import {
   normalizeAdminCategoryInput,
@@ -71,6 +75,7 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly userServicesService: UserServicesService,
     private readonly notificationService: NotificationService,
+    private readonly documentUploadService: DocumentUploadService,
   ) {}
 
   private normalizeInteger(value: number | string, fieldName: string) {
@@ -697,8 +702,16 @@ export class AdminService {
 
   // ─── Application Management ───────────────────────────────────────────────
 
-  async getAllServiceApplications(status?: string) {
-    return this.userServicesService.getAllServices(status);
+  async getAllServiceApplications(
+    status?: string,
+    applicationDate?: string,
+    timezoneOffsetMinutes?: number,
+  ) {
+    return this.userServicesService.getAllServices(
+      status,
+      applicationDate,
+      timezoneOffsetMinutes,
+    );
   }
 
   async getServiceApplication(id: number) {
@@ -787,6 +800,81 @@ export class AdminService {
       status,
       notes,
     );
+  }
+
+  async replaceClientApprovalDocument(
+    adminId: number,
+    applicationId: number,
+    docId: number,
+    file: UploadedDocumentFile | undefined,
+    notes?: string,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Corrected document is required');
+    }
+
+    const document = (await this.prisma.serviceRequestDocument.findFirst({
+      where: {
+        id: docId,
+        userServiceId: applicationId,
+      },
+      include: {
+        uploadedBy: true,
+      },
+    })) as any;
+
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    const uploaderRole = String(document.uploadedBy?.role || '').toLowerCase();
+    const documentType = String(document.documentType || '').toLowerCase();
+
+    if (uploaderRole === 'user' || uploaderRole === 'customer') {
+      throw new BadRequestException(
+        'Client-uploaded documents cannot be replaced by an administrator',
+      );
+    }
+
+    if (!['client', 'client_document'].includes(documentType)) {
+      throw new BadRequestException(
+        'Only documents sent for client approval can be replaced',
+      );
+    }
+
+    if (
+      !['rejected', 'correction', 'correction_requested'].includes(
+        String(document.status || '').toLowerCase(),
+      )
+    ) {
+      throw new BadRequestException(
+        'This document is not awaiting an administrator correction',
+      );
+    }
+
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminId },
+    });
+    const trimmedNote = notes?.trim();
+    const responseNote = trimmedNote
+      ? admin?.name
+        ? `Admin (${admin.name}): ${trimmedNote}`
+        : `Admin: ${trimmedNote}`
+      : '';
+    const existingNotes =
+      typeof document.notes === 'string' ? document.notes.trim() : '';
+    const combinedNotes = [existingNotes, responseNote]
+      .filter(Boolean)
+      .join('\n\n');
+
+    await this.documentUploadService.replaceDocument(
+      document.id,
+      adminId,
+      file,
+      combinedNotes || undefined,
+    );
+
+    return this.getServiceApplication(applicationId);
   }
 
   // ─── Details & Stats ──────────────────────────────────────────────────────

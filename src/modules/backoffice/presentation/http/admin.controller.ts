@@ -4,8 +4,12 @@ import {
     Post,
     Body,
     Delete,
+    FileTypeValidator,
+    MaxFileSizeValidator,
     Param,
+    ParseFilePipe,
     Query,
+    Req,
     UseGuards,
     UseInterceptors,
     UploadedFile,
@@ -26,6 +30,7 @@ import {
     type UpdateRoleInput,
 } from '../../application/admin.service';
 import type { UpdateApplicationStatusInput } from '../../../operations/application/user-services.service';
+import type { UploadedDocumentFile } from '../../../operations/application/document-upload.service';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -186,9 +191,16 @@ export class AdminController {
 
     // Service Applications
     @Get('service-applications')
-    async getServiceApplications(@Query('status') status?: string) {
-        const result =
-            await this.adminService.getAllServiceApplications(status);
+    async getServiceApplications(
+        @Query('status') status?: string,
+        @Query('application_date') applicationDate?: string,
+        @Query('timezone_offset') timezoneOffset?: string,
+    ) {
+        const result = await this.adminService.getAllServiceApplications(
+            status,
+            applicationDate,
+            timezoneOffset === undefined ? undefined : Number(timezoneOffset),
+        );
         return successResponse(result);
     }
 
@@ -235,6 +247,40 @@ export class AdminController {
             data.remark,
         );
         return successResponse(result, `Document ${data.status} successfully`);
+    }
+
+    @Post('service-applications/:id/documents/:docId/replace')
+    @UseInterceptors(FileInterceptor('document'))
+    async replaceClientApprovalDocument(
+        @Req() req: any,
+        @Param('id', ParseIntPipe) id: number,
+        @Param('docId', ParseIntPipe) docId: number,
+        @Body('notes') notes: string | undefined,
+        @UploadedFile(
+            new ParseFilePipe({
+                validators: [
+                    new MaxFileSizeValidator({ maxSize: 1024 * 1024 }),
+                    new FileTypeValidator({
+                        fileType:
+                            /(application\/pdf|image\/jpeg|image\/png)/,
+                    }),
+                ],
+            }),
+        )
+        file: UploadedDocumentFile,
+    ) {
+        const result =
+            await this.adminService.replaceClientApprovalDocument(
+                req.user.id,
+                id,
+                docId,
+                file,
+                notes,
+            );
+        return successResponse(
+            result,
+            'Corrected document sent for client approval',
+        );
     }
 
     @Post('service-applications/:id/upload-certificate')
