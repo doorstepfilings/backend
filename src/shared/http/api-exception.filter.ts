@@ -32,14 +32,17 @@ export class ApiExceptionFilter implements ExceptionFilter {
 
         let message = 'Internal server error';
         let errors: unknown = null;
+        let code: string | null = null;
 
         if (
             exception instanceof BadRequestException &&
             typeof exceptionResponse === 'object'
         ) {
             const payload = exceptionResponse as {
+                code?: string;
                 message?: string | string[];
             };
+            code = payload.code ?? null;
             message = Array.isArray(payload.message)
                 ? 'Validation failed'
                 : (payload.message ?? 'Validation failed');
@@ -52,9 +55,11 @@ export class ApiExceptionFilter implements ExceptionFilter {
             'message' in exceptionResponse
         ) {
             const payload = exceptionResponse as {
+                code?: string;
                 error?: string;
                 message?: string | string[];
             };
+            code = payload.code ?? null;
             message = Array.isArray(payload.message)
                 ? (payload.error ?? 'Request failed')
                 : (payload.message ?? payload.error ?? 'Request failed');
@@ -70,6 +75,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
 
         response.status(status).json({
             success: false,
+            ...(code ? { code } : {}),
             ...(errors ? { errors } : {}),
             message,
         });

@@ -52,7 +52,10 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException({
+        code: 'EMAIL_NOT_FOUND',
+        message: 'Email not found',
+      });
     }
 
     const passwordMatches = await compare(
@@ -61,7 +64,10 @@ export class AuthService {
     );
 
     if (!passwordMatches) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException({
+        code: 'INCORRECT_PASSWORD',
+        message: 'Incorrect password',
+      });
     }
 
     const payload: JwtPayload = {

@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { hash } from 'bcryptjs';
 import { AuthService } from './auth.service';
 import { NotificationService } from '../../communication/notification.service';
 import { PrismaService } from '../../../shared/services/prisma.service';
@@ -68,6 +69,47 @@ describe('AuthService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('login', () => {
+    it('returns EMAIL_NOT_FOUND when the email is not registered', async () => {
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.login({
+          email: 'missing@example.com',
+          password: 'password123',
+        }),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'EMAIL_NOT_FOUND',
+          message: 'Email not found',
+        },
+      });
+    });
+
+    it('returns INCORRECT_PASSWORD when the password does not match', async () => {
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+        id: 1,
+        email: 'user@example.com',
+        password: await hash('correct-password', 4),
+        role: 'user',
+        accountant: null,
+        regionalManager: null,
+      });
+
+      await expect(
+        service.login({
+          email: 'user@example.com',
+          password: 'wrong-password',
+        }),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'INCORRECT_PASSWORD',
+          message: 'Incorrect password',
+        },
+      });
+    });
   });
 
   describe('register', () => {
