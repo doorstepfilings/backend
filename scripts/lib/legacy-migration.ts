@@ -50,7 +50,10 @@ const SOURCE_COUNT_QUERIES: Record<TableName, string> = {
     service_request_documents:
         'SELECT COUNT(*) AS count FROM service_request_documents',
     services: 'SELECT COUNT(*) AS count FROM services',
-    user_services: 'SELECT COUNT(*) AS count FROM user_services',
+    user_services: `SELECT COUNT(*) AS count
+        FROM user_services us
+        INNER JOIN users u ON u.id = us.user_id
+        INNER JOIN services s ON s.id = us.service_id`,
     users: 'SELECT COUNT(*) AS count FROM users',
 };
 
@@ -345,6 +348,31 @@ async function hasLegacyColumn(
     );
 
     return rows.length > 0;
+}
+
+async function selectExistingColumns(
+    pool: mysql.Pool,
+    table: string,
+    columns: string[],
+): Promise<string> {
+    const existingColumns = new Set<string>();
+    const rows = await queryRows<{ column_name: unknown }>(
+        pool,
+        `SELECT column_name AS column_name
+         FROM information_schema.columns
+         WHERE table_schema = DATABASE()
+           AND table_name = '${table}'`,
+    );
+    for (const row of rows) {
+        existingColumns.add(String(row.column_name).toLowerCase());
+    }
+
+    return columns
+        .map((col) => {
+            const hasCol = existingColumns.has(col.toLowerCase());
+            return hasCol ? `\`${col}\`` : `NULL AS \`${col}\``;
+        })
+        .join(', ');
 }
 
 async function summarizeSkippedLegacyTables(pool: mysql.Pool) {
@@ -670,6 +698,22 @@ function ensureReferenceExists(
     }
 }
 
+function resolveOptionalReference(
+    id: number | null,
+    knownIds: ReadonlySet<number>,
+    label: string,
+    context: string,
+) {
+    if (id === null || knownIds.has(id)) {
+        return id;
+    }
+
+    console.warn(
+        `[migrate:legacy] ${context}: ignored missing ${label} with id=${id}`,
+    );
+    return null;
+}
+
 async function migrateServiceCategories(
     pool: mysql.Pool,
     prisma: PrismaClient,
@@ -942,29 +986,17 @@ async function migrateUsers(
     prisma: PrismaClient,
     summary: StageSummary[],
 ) {
+    const selectList = await selectExistingColumns(pool, 'users', [
+        'id', 'name', 'email', 'password', 'role',
+        'mobile', 'mobile_number', 'is_mobile_verified', 'referral_code',
+        'rm_unique_id', 'unique_id', 'accountant_unique_id', 'rm_id', 'accountant_id',
+        'address', 'city', 'state', 'pincode', 'created_at', 'updated_at'
+    ]);
+
     const rows = await queryRows<LegacyUserRow>(
         pool,
         `SELECT
-            id,
-            name,
-            email,
-            password,
-            role,
-            mobile,
-            mobile_number,
-            is_mobile_verified,
-            referral_code,
-            rm_unique_id,
-            unique_id,
-            accountant_unique_id,
-            rm_id,
-            accountant_id,
-            address,
-            city,
-            state,
-            pincode,
-            created_at,
-            updated_at
+            ${selectList}
          FROM users
          ORDER BY id`,
     );
@@ -1033,11 +1065,18 @@ async function migrateUsers(
 
     for (const row of rows) {
         const id = toInteger(row.id, 'users.id');
-        const rmId = toOptionalInteger(row.rm_id);
-        const accountantId = toOptionalInteger(row.accountant_id);
-
-        ensureReferenceExists(rmId, userIds, 'relationship manager user');
-        ensureReferenceExists(accountantId, userIds, 'accountant user');
+        const rmId = resolveOptionalReference(
+            toOptionalInteger(row.rm_id),
+            userIds,
+            'relationship manager user',
+            `users.id=${id}`,
+        );
+        const accountantId = resolveOptionalReference(
+            toOptionalInteger(row.accountant_id),
+            userIds,
+            'accountant user',
+            `users.id=${id}`,
+        );
 
         await prisma.user.update({
             where: { id },
@@ -1058,20 +1097,15 @@ async function migrateEnquiries(
     prisma: PrismaClient,
     summary: StageSummary[],
 ) {
+    const selectList = await selectExistingColumns(pool, 'enquiries', [
+        'id', 'name', 'email', 'phone', 'mobile',
+        'service', 'service_type', 'message', 'status', 'created_at', 'updated_at'
+    ]);
+
     const rows = await queryRows<LegacyEnquiryRow>(
         pool,
         `SELECT
-            id,
-            name,
-            email,
-            phone,
-            mobile,
-            service,
-            service_type,
-            message,
-            status,
-            created_at,
-            updated_at
+            ${selectList}
          FROM enquiries
          ORDER BY id`,
     );
@@ -1121,48 +1155,51 @@ async function migrateUserServices(
     userIds: ReadonlySet<number>,
     serviceIds: ReadonlySet<number>,
 ) {
+    const selectList = await selectExistingColumns(pool, 'user_services', [
+        'id', 'user_id', 'service_id', 'accountant_id', 'assigned_accountant_id',
+        'application_unique_id', 'status', 'payment_status', 'form_data', 'documents',
+        'amount', 'notes', 'revision_notes', 'ca_notes', 'update_note',
+        'rejection_reason', 'verified', 'certificate_url', 'submitted_to_ca_at',
+        'created_at', 'updated_at'
+    ]);
+
     const rows = await queryRows<LegacyUserServiceRow>(
         pool,
         `SELECT
-            id,
-            user_id,
-            service_id,
-            accountant_id,
-            assigned_accountant_id,
-            application_unique_id,
-            status,
-            payment_status,
-            form_data,
-            documents,
-            amount,
-            notes,
-            revision_notes,
-            ca_notes,
-            update_note,
-            rejection_reason,
-            verified,
-            certificate_url,
-            submitted_to_ca_at,
-            created_at,
-            updated_at
+            ${selectList}
          FROM user_services
          ORDER BY id`,
     );
 
     const userServiceIds = new Set<number>();
     const ownerByUserServiceId = new Map<number, number>();
+    let migratedRows = 0;
 
     for (const row of rows) {
         const id = toInteger(row.id, 'user_services.id');
         const userId = toInteger(row.user_id, 'user_services.user_id');
         const serviceId = toInteger(row.service_id, 'user_services.service_id');
-        const accountantId =
+        const accountantId = resolveOptionalReference(
             toOptionalInteger(row.accountant_id) ??
-            toOptionalInteger(row.assigned_accountant_id);
+                toOptionalInteger(row.assigned_accountant_id),
+            userIds,
+            'accountant',
+            `user_services.id=${id}`,
+        );
 
-        ensureReferenceExists(userId, userIds, 'user');
-        ensureReferenceExists(serviceId, serviceIds, 'service');
-        ensureReferenceExists(accountantId, userIds, 'accountant');
+        if (!userIds.has(userId)) {
+            console.warn(
+                `[migrate:legacy] user_services.id=${id}: skipped missing user with id=${userId}`,
+            );
+            continue;
+        }
+
+        if (!serviceIds.has(serviceId)) {
+            console.warn(
+                `[migrate:legacy] user_services.id=${id}: skipped missing service with id=${serviceId}`,
+            );
+            continue;
+        }
 
         userServiceIds.add(id);
         ownerByUserServiceId.set(id, userId);
@@ -1221,9 +1258,17 @@ async function migrateUserServices(
                 verified: toBoolean(row.verified),
             },
         });
+
+        migratedRows++;
     }
 
-    await verifyStageCount(pool, prisma, summary, 'user_services', rows.length);
+    await verifyStageCount(
+        pool,
+        prisma,
+        summary,
+        'user_services',
+        migratedRows,
+    );
 
     return {
         ownerByUserServiceId,
@@ -1240,33 +1285,17 @@ async function migrateServiceRequestDocuments(
     ownerByUserServiceId: ReadonlyMap<number, number>,
     serviceDocumentIds: ReadonlySet<number>,
 ) {
-    const hasSourceDocumentId = await hasLegacyColumn(
-        pool,
-        'service_request_documents',
-        'source_document_id',
-    );
+    const selectList = await selectExistingColumns(pool, 'service_request_documents', [
+        'id', 'user_service_id', 'service_document_id', 'uploaded_by', 'source_document_id',
+        'document_name', 'document_type', 'document_category', 'file_name', 'file_path',
+        'file_extension', 'file_size', 'mime_type', 'version', 'status',
+        'notes', 'is_final', 'created_at', 'updated_at'
+    ]);
+
     const rows = await queryRows<LegacyServiceRequestDocumentRow>(
         pool,
         `SELECT
-            id,
-            user_service_id,
-            service_document_id,
-            uploaded_by,
-            ${hasSourceDocumentId ? 'source_document_id' : 'NULL AS source_document_id'},
-            document_name,
-            document_type,
-            document_category,
-            file_name,
-            file_path,
-            file_extension,
-            file_size,
-            mime_type,
-            version,
-            status,
-            notes,
-            is_final,
-            created_at,
-            updated_at
+            ${selectList}
          FROM service_request_documents
          ORDER BY id`,
     );
@@ -1388,39 +1417,20 @@ async function migratePayments(
     userIds: ReadonlySet<number>,
     userServiceIds: ReadonlySet<number>,
 ) {
+    const selectList = await selectExistingColumns(pool, 'payments', [
+        'id', 'user_id', 'user_service_id', 'payment_provider', 'payment_provider_order_id',
+        'payment_provider_transaction_id', 'payment_provider_status', 'payment_status',
+        'status', 'payment_method', 'amount', 'currency', 'order_unique_id',
+        'invoice_unique_id', 'notes', 'metadata', 'refund_id', 'refund_amount',
+        'refund_reason', 'refund_status', 'base_amount', 'gst_amount', 'payment_reference',
+        'transaction_id', 'payment_gateway_response', 'payment_gateway_error',
+        'payment_date', 'payment_verified_at', 'created_at', 'updated_at'
+    ]);
+
     const rows = await queryRows<LegacyPaymentRow>(
         pool,
         `SELECT
-            id,
-            user_id,
-            user_service_id,
-            payment_provider,
-            payment_provider_order_id,
-            payment_provider_transaction_id,
-            payment_provider_status,
-            payment_status,
-            status,
-            payment_method,
-            amount,
-            currency,
-            order_unique_id,
-            invoice_unique_id,
-            notes,
-            metadata,
-            refund_id,
-            refund_amount,
-            refund_reason,
-            refund_status,
-            base_amount,
-            gst_amount,
-            payment_reference,
-            transaction_id,
-            payment_gateway_response,
-            payment_gateway_error,
-            payment_date,
-            payment_verified_at,
-            created_at,
-            updated_at
+            ${selectList}
          FROM payments
          ORDER BY id`,
     );

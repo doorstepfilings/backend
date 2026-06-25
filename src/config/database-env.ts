@@ -76,6 +76,8 @@ function getDatabaseConfig(
         return null;
     }
 
+    const defaultPort = prefix === 'DB' ? 5432 : 3306;
+
     return {
         connectionLimit: readOptionalNumber(
             env,
@@ -85,7 +87,7 @@ function getDatabaseConfig(
         database: readRequiredString(env, `${prefix}_DATABASE`),
         host: readRequiredString(env, `${prefix}_HOST`),
         password: readRequiredString(env, `${prefix}_PASSWORD`, true),
-        port: readOptionalNumber(env, `${prefix}_PORT`, DEFAULT_PORT),
+        port: readOptionalNumber(env, `${prefix}_PORT`, defaultPort),
         username: readRequiredString(env, `${prefix}_USERNAME`),
     };
 }
@@ -102,13 +104,13 @@ export function getLegacyDatabaseConfig(
     return getDatabaseConfig(env, 'LEGACY_DB', false);
 }
 
-export function buildMysqlConnectionUrl(
+export function buildPostgresConnectionUrl(
     config: Pick<
         DatabaseConnectionConfig,
         'database' | 'host' | 'password' | 'port' | 'username'
     >,
 ) {
-    const url = new URL('mysql://localhost');
+    const url = new URL('postgresql://localhost');
 
     url.username = config.username;
     url.password = config.password;
@@ -122,7 +124,7 @@ export function buildMysqlConnectionUrl(
 export function getPrismaDatabaseUrl(
     env: EnvLike = process.env,
 ) {
-    return buildMysqlConnectionUrl(getPrimaryDatabaseConfig(env));
+    return buildPostgresConnectionUrl(getPrimaryDatabaseConfig(env));
 }
 
 export function describeDatabaseConnection(

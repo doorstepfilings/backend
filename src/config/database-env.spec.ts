@@ -1,21 +1,21 @@
 import {
     assertDifferentDatabases,
-    buildMysqlConnectionUrl,
+    buildPostgresConnectionUrl,
     getLegacyDatabaseConfig,
     getPrimaryDatabaseConfig,
 } from './database-env';
 
 describe('database-env', () => {
-    it('builds a mysql url from DB-style variables', () => {
-        const url = buildMysqlConnectionUrl({
+    it('builds a postgres url from DB-style variables', () => {
+        const url = buildPostgresConnectionUrl({
             database: 'doorstep_nest',
             host: '127.0.0.1',
             password: '',
-            port: 3306,
+            port: 5432,
             username: 'root',
         });
 
-        expect(url).toBe('mysql://root@127.0.0.1:3306/doorstep_nest');
+        expect(url).toBe('postgresql://root@127.0.0.1:5432/doorstep_nest');
     });
 
     it('returns null when no legacy database config is provided', () => {
@@ -28,7 +28,7 @@ describe('database-env', () => {
                 DB_DATABASE: 'doorstep_nest',
                 DB_HOST: '127.0.0.1',
                 DB_PASSWORD: '',
-                DB_PORT: '3306',
+                DB_PORT: '5432',
                 DB_USERNAME: 'root',
             }),
         ).toEqual({
@@ -36,7 +36,7 @@ describe('database-env', () => {
             database: 'doorstep_nest',
             host: '127.0.0.1',
             password: '',
-            port: 3306,
+            port: 5432,
             username: 'root',
         });
     });

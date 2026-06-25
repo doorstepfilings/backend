@@ -1,12 +1,12 @@
 // DoorstepFilings Prisma schema.
-// Prisma owns the fresh NestJS MySQL database schema.
+// Prisma owns the fresh NestJS PostgreSQL database schema.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
 }
 
 model User {
@@ -81,7 +81,7 @@ model Service {
   slug                 String            @unique(map: "services_slug_key") @db.VarChar(191)
   link                 String?           @db.VarChar(255)
   description          String?           @db.Text
-  longDescription      String?           @map("long_description") @db.LongText
+  longDescription      String?           @map("long_description") @db.Text
   features             String?           @db.Text
   requirements         String?           @db.Text
   process              String?           @db.Text

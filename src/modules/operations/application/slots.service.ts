@@ -19,13 +19,13 @@ export class SlotsService {
     // Using raw query for JSON extraction and grouping
     const results = await this.prisma.$queryRaw<any[]>`
             SELECT 
-                JSON_UNQUOTE(JSON_EXTRACT(form_data, '$.scheduled_time')) as scheduled_time,
+                form_data->>'scheduled_time' as scheduled_time,
                 COUNT(*) as count
             FROM user_services
             WHERE service_id = ${serviceId}
               AND status NOT IN ('in_cart', ${USER_SERVICE_PAYMENT_PENDING_STATUS}, 'cancelled', 'rejected', 'approved', 'completed')
-              AND JSON_UNQUOTE(JSON_EXTRACT(form_data, '$.scheduled_date')) = ${date}
-            GROUP BY scheduled_time
+              AND form_data->>'scheduled_date' = ${date}
+            GROUP BY form_data->>'scheduled_time'
         `;
 
     const bookingsMap = results.reduce<Record<string, number>>((acc, curr) => {

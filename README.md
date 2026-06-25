@@ -5,7 +5,7 @@ NestJS backend workspace for the Doorstep platform.
 Current focus:
 - run the live backend for the Next.js frontend
 - keep the codebase organized by bounded context
-- use MySQL through Prisma with production-ready environment validation
+- use PostgreSQL through Prisma with production-ready environment validation
 
 Local setup:
 
@@ -60,7 +60,7 @@ npm run migrate:verify
 Runtime:
 - API base URL: `http://127.0.0.1:4000/api`
 - Health check: `GET /api/health`
-- Database: MySQL with Prisma
+- Database: PostgreSQL with Prisma
 
 Prisma migration workflow:
 
