@@ -66,8 +66,8 @@ export class AuthController {
       throw new BadRequestException('Identifier is required');
     }
 
-    const result = await this.authService.sendOtp(identifier);
-    return successResponse(result, 'OTP sent');
+    await this.authService.sendOtp(identifier);
+    return successResponse(null, 'OTP sent successfully');
   }
 
   @Post('verify-otp')
@@ -85,8 +85,8 @@ export class AuthController {
 
   @Post('send-login-otp')
   async sendLoginOtp(@Body() body: SendLoginOtpDto) {
-    const result = await this.authService.sendLoginOtp(body.mobile_number);
-    return successResponse(result, 'OTP sent successfully to your mobile');
+    await this.authService.sendLoginOtp(body.mobile_number);
+    return successResponse(null, 'OTP sent successfully to your mobile');
   }
 
   @Post('login-with-mobile')

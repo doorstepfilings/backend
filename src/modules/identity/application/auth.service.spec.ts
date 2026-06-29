@@ -24,6 +24,7 @@ describe('AuthService', () => {
             },
             otpVerification: {
               findFirst: jest.fn(),
+              create: jest.fn(),
             },
           },
         },
@@ -58,6 +59,8 @@ describe('AuthService', () => {
           useValue: {
             sendEmail: jest.fn().mockResolvedValue(null),
             sendWelcomeNotification: jest.fn().mockResolvedValue(null),
+            sendRegisterOtpNotification: jest.fn().mockResolvedValue(null),
+            sendSms: jest.fn().mockResolvedValue(null),
           },
         },
       ],
@@ -130,6 +133,7 @@ describe('AuthService', () => {
         updatedAt: new Date(),
       };
 
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
       (prisma.user.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.otpVerification.findFirst as jest.Mock).mockResolvedValue({
         id: 1,
@@ -233,6 +237,26 @@ describe('AuthService', () => {
           'wrong-secret',
         ),
       ).rejects.toThrow('Invalid social authentication request');
+    });
+  });
+
+  describe('sendOtp', () => {
+    it('should throw ConflictException if the email is already registered', async () => {
+      const email = 'existing@example.com';
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({ id: 1, email });
+
+      await expect(service.sendOtp(email)).rejects.toThrow(
+        'This email address is already registered.',
+      );
+    });
+
+    it('should create an otpVerification record and send email notification if email is not registered', async () => {
+      const email = 'new@example.com';
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.otpVerification.create as jest.Mock).mockResolvedValue({ id: 1 });
+
+      await expect(service.sendOtp(email)).resolves.toBeUndefined();
+      expect(prisma.otpVerification.create).toHaveBeenCalled();
     });
   });
 });

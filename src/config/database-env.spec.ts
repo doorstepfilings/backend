@@ -12,10 +12,10 @@ describe('database-env', () => {
             host: '127.0.0.1',
             password: '',
             port: 5432,
-            username: 'root',
+            username: 'postgres',
         });
 
-        expect(url).toBe('postgresql://root@127.0.0.1:5432/doorstep_nest');
+        expect(url).toBe('postgresql://postgres@127.0.0.1:5432/doorstep_nest');
     });
 
     it('returns null when no legacy database config is provided', () => {

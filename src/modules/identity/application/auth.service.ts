@@ -37,7 +37,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly notificationService: NotificationService,
-  ) {}
+  ) { }
 
   async login(loginDto: LoginDto) {
     const email = loginDto.email.trim().toLowerCase();
@@ -119,14 +119,22 @@ export class AuthService {
       );
     }
 
-    const existing = await this.prisma.user.findFirst({
-      where: {
-        OR: [{ email }, { mobileNumber: dto.mobile_number }],
-      },
+    const existingEmail = await this.prisma.user.findUnique({
+      where: { email },
     });
 
-    if (existing) {
-      throw new ConflictException('User already exists');
+    if (existingEmail) {
+      throw new ConflictException('This email address is already registered.');
+    }
+
+    const existingMobile = await this.prisma.user.findFirst({
+      where: { mobileNumber: dto.mobile_number },
+    });
+
+    if (existingMobile) {
+      throw new ConflictException(
+        'This mobile number is already registered with another account.',
+      );
     }
 
     let regionalManagerId: number | null = null;
@@ -192,8 +200,25 @@ export class AuthService {
     };
   }
 
-  async sendOtp(identifier: string) {
+  async sendOtp(identifier: string): Promise<void> {
     const normalizedIdentifier = normalizeIdentifier(identifier);
+
+    if (normalizedIdentifier.includes('@')) {
+      const existingUser = await this.prisma.user.findUnique({
+        where: { email: normalizedIdentifier },
+      });
+      if (existingUser) {
+        throw new ConflictException('This email address is already registered.');
+      }
+    } else {
+      const existingUser = await this.prisma.user.findFirst({
+        where: { mobileNumber: normalizedIdentifier },
+      });
+      if (existingUser) {
+        throw new ConflictException('This mobile number is already registered.');
+      }
+    }
+
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
 
@@ -214,14 +239,9 @@ export class AuthService {
       const formattedPhone = formatPhoneNumber(normalizedIdentifier);
       await this.notificationService.sendSms(
         formattedPhone,
-        `Your K P Chaudhary & Co. verification code is: ${otp}. This code expires in 10 minutes.`,
+        `DoorStepFilings verification code is: ${otp}. This code expires in 10 minutes.`,
       );
     }
-
-    return this.devOnlyPayload({
-      message: 'OTP sent successfully',
-      otp,
-    });
   }
 
   async verifyOtp(identifier: string, otp: string) {
@@ -335,7 +355,7 @@ export class AuthService {
     return { message: 'Password reset successfully' };
   }
 
-  async sendLoginOtp(mobileNumber: string) {
+  async sendLoginOtp(mobileNumber: string): Promise<void> {
     const user = await this.findUserByMobile(mobileNumber);
 
     if (!user) {
@@ -361,11 +381,6 @@ export class AuthService {
       formattedPhone,
       `Your K P Chaudhary & Co. login code is: ${otp}. This code expires in 10 minutes.`,
     );
-
-    return this.devOnlyPayload({
-      message: 'OTP sent successfully to your mobile',
-      otp,
-    });
   }
 
   async loginWithMobile(mobileNumber: string, otp: string) {
@@ -483,7 +498,7 @@ export class AuthService {
   private devOnlyPayload<T extends Record<string, unknown>>(data: T) {
     const appEnvironment = this.configService.getOrThrow<AppEnvironment>('app');
 
-    return appEnvironment.nodeEnv === 'production' ? {} : data;
+    return (appEnvironment.nodeEnv === 'development' || appEnvironment.nodeEnv === 'test') ? data : {};
   }
 }
 

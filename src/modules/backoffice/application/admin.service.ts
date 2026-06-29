@@ -251,12 +251,24 @@ export class AdminService {
 
   async storeUser(data: CreateUserInput) {
     const email = data.email.trim().toLowerCase();
-    const existing = await this.prisma.user.findUnique({
+    const existingEmail = await this.prisma.user.findUnique({
       where: { email },
     });
 
-    if (existing) {
-      throw new BadRequestException('User with this email already exists');
+    if (existingEmail) {
+      throw new BadRequestException('This email address is already registered.');
+    }
+
+    if (data.mobile_number) {
+      const existingMobile = await this.prisma.user.findFirst({
+        where: { mobileNumber: data.mobile_number },
+      });
+
+      if (existingMobile) {
+        throw new BadRequestException(
+          'This mobile number is already registered with another account.',
+        );
+      }
     }
 
     const hashedPassword = await hash(data.password || 'password123', 10);
