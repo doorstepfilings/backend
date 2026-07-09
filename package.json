@@ -22,6 +22,7 @@
     "seed": "npm run seed:dev",
     "migrate:legacy": "ts-node scripts/migrate-legacy.ts",
     "migrate:verify": "ts-node scripts/verify-legacy-migration.ts",
+    "db:reset-sequences": "ts-node scripts/reset-sequences.ts",
     "install:browsers": "npx playwright install chromium",
     "install:browsers:deps": "npx playwright install-deps chromium"
   },

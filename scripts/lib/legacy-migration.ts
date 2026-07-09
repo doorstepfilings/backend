@@ -1727,6 +1727,40 @@ async function verifyNoTargetOrphans(prisma: PrismaClient) {
     }
 }
 
+export async function resetPostgresSequences(prisma: PrismaClient) {
+    const tables = [
+        'users',
+        'otp_verifications',
+        'service_categories',
+        'services',
+        'service_documents',
+        'enquiries',
+        'user_services',
+        'service_request_documents',
+        'payments',
+        'media_assets',
+    ];
+
+    console.log('[migrate:legacy] Resetting PostgreSQL sequences...');
+    for (const table of tables) {
+        try {
+            await prisma.$executeRawUnsafe(`
+                SELECT setval(
+                    pg_get_serial_sequence('"${table}"', 'id'),
+                    COALESCE(MAX(id), 1),
+                    COALESCE(MAX(id), 0) > 0
+                ) FROM "${table}";
+            `);
+            console.log(`[migrate:legacy] Reset sequence for table: ${table}`);
+        } catch (error: any) {
+            console.warn(
+                `[migrate:legacy] Failed to reset sequence for table: ${table}. Error:`,
+                error.message || error,
+            );
+        }
+    }
+}
+
 export async function runLegacyMigration() {
     const { legacy, pool, primary } = createLegacyPool();
     const prisma = createPrismaClient();
@@ -1785,6 +1819,8 @@ export async function runLegacyMigration() {
             userIds,
             userServiceIds,
         );
+
+        await resetPostgresSequences(prisma);
 
         console.table(summary);
         printSkippedLegacyTables('migrate:legacy', skippedTables);
