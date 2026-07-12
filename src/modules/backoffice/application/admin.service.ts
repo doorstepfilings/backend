@@ -27,6 +27,7 @@ import {
   toAdminCategoryResource,
   toAdminServiceResource,
 } from './admin.mapper';
+import { validatePassword, PASSWORD_ERROR_MESSAGE } from '../../../shared/validators/password.validator';
 
 export type AdminCategoryInput = any;
 
@@ -271,7 +272,13 @@ export class AdminService {
       }
     }
 
-    const hashedPassword = await hash(data.password || 'password123', 10);
+    const defaultPassword = 'password123';
+    const passwordToHash = data.password || defaultPassword;
+    if (!validatePassword(passwordToHash)) {
+      throw new BadRequestException(PASSWORD_ERROR_MESSAGE);
+    }
+
+    const hashedPassword = await hash(passwordToHash, 10);
 
     const userData: any = {
       name: data.name,
@@ -326,7 +333,61 @@ export class AdminService {
       );
     }
 
-    await this.prisma.user.delete({ where: { id } });
+    const ongoingServicesCount = await this.prisma.userService.count({
+      where: {
+        userId: id,
+        status: {
+          notIn: ['completed', 'cancelled', 'rejected'],
+        },
+      },
+    });
+
+    if (ongoingServicesCount > 0) {
+      throw new BadRequestException(
+        'Cannot delete user because they have ongoing services. Please ensure all services are completed or cancelled first.',
+      );
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const userServices = await tx.userService.findMany({
+          where: { userId: id },
+          select: { id: true },
+        });
+        const userServiceIds = userServices.map((s) => s.id);
+
+        if (userServiceIds.length > 0) {
+          await tx.serviceRequestDocument.deleteMany({
+            where: { userServiceId: { in: userServiceIds } },
+          });
+
+          await tx.payment.deleteMany({
+            where: { userServiceId: { in: userServiceIds } },
+          });
+
+          await tx.userService.deleteMany({
+            where: { userId: id },
+          });
+        }
+
+        await tx.serviceRequestDocument.deleteMany({
+          where: { uploadedById: id },
+        });
+
+        await tx.payment.deleteMany({
+          where: { userId: id },
+        });
+
+        await tx.user.delete({ where: { id } });
+      });
+    } catch (error: any) {
+      if (error?.code === 'P2003' || error?.cause?.code === '23001') {
+        throw new BadRequestException(
+          'Cannot delete user. The user has associated records that could not be automatically deleted.',
+        );
+      }
+      throw error;
+    }
   }
 
   async assignRM(userId: number, rmId: number | null, data: UserLocationInput = {}) {

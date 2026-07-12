@@ -1,4 +1,5 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
+import { IsStrongPassword } from '../../../../../shared/validators/password.validator';
 
 export class ResetPasswordDto {
     @IsString()
@@ -10,10 +11,10 @@ export class ResetPasswordDto {
     email!: string;
 
     @IsString()
-    @MinLength(8)
+    @IsStrongPassword()
     password!: string;
 
     @IsString()
-    @MinLength(8)
+    @IsStrongPassword()
     password_confirmation!: string;
 }

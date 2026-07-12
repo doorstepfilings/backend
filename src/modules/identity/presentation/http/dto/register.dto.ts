@@ -3,8 +3,8 @@ import {
     IsNotEmpty,
     IsOptional,
     IsString,
-    MinLength,
 } from 'class-validator';
+import { IsStrongPassword } from '../../../../../shared/validators/password.validator';
 
 export class RegisterDto {
     @IsNotEmpty()
@@ -20,7 +20,7 @@ export class RegisterDto {
     mobile_number!: string;
 
     @IsNotEmpty()
-    @MinLength(6)
+    @IsStrongPassword()
     password!: string;
 
     @IsOptional()
