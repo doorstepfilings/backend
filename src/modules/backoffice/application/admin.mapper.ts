@@ -137,7 +137,7 @@ export function normalizeAdminServiceInput(
     const normalized: any = {};
 
     const serviceCategoryId = toNumber(
-        pickValue(payload, 'serviceCategoryId', 'service_category_id'),
+        pickValue(payload, 'service_category_id', 'serviceCategoryId'),
     );
     if (serviceCategoryId !== undefined) {
         normalized.serviceCategoryId = serviceCategoryId;
@@ -149,7 +149,7 @@ export function normalizeAdminServiceInput(
     }
 
     const shortDescription = toNullableString(
-        pickValue(payload, 'shortDescription', 'short_description'),
+        pickValue(payload, 'short_description', 'shortDescription'),
     );
     if (shortDescription !== undefined) {
         normalized.shortDescription = shortDescription;
@@ -166,7 +166,7 @@ export function normalizeAdminServiceInput(
     }
 
     const longDescription = toNullableString(
-        pickValue(payload, 'longDescription', 'long_description'),
+        pickValue(payload, 'long_description', 'longDescription'),
     );
     if (longDescription !== undefined) {
         normalized.longDescription = longDescription;
@@ -193,52 +193,52 @@ export function normalizeAdminServiceInput(
     }
 
     const pricingPlans = toJsonLike(
-        pickValue(payload, 'pricingPlans', 'pricing_plans'),
+        pickValue(payload, 'pricing_plans', 'pricingPlans'),
     );
     if (pricingPlans !== undefined) {
         normalized.pricingPlans = pricingPlans;
     }
 
     const gstPercentage = toNullableString(
-        pickValue(payload, 'gstPercentage', 'gst_percentage'),
+        pickValue(payload, 'gst_percentage', 'gstPercentage'),
     );
     if (gstPercentage !== undefined && gstPercentage !== null) {
         normalized.gstPercentage = gstPercentage;
     }
 
     const serviceCode = toNullableString(
-        pickValue(payload, 'serviceCode', 'service_code'),
+        pickValue(payload, 'service_code', 'serviceCode'),
     );
     if (serviceCode !== undefined) {
         normalized.serviceCode = serviceCode;
     }
 
     const serviceType = toNullableString(
-        pickValue(payload, 'serviceType', 'service_type'),
+        pickValue(payload, 'service_type', 'serviceType'),
     );
     if (serviceType !== undefined && serviceType !== null) {
         normalized.serviceType = serviceType;
     }
 
     const processingDays = toNumber(
-        pickValue(payload, 'processingDays', 'processing_days'),
+        pickValue(payload, 'processing_days', 'processingDays'),
     );
     if (processingDays !== undefined) {
         normalized.processingDays = processingDays;
     }
 
-    const isActive = toBoolean(pickValue(payload, 'isActive', 'is_active'));
+    const isActive = toBoolean(pickValue(payload, 'is_active', 'isActive'));
     if (isActive !== undefined) {
         normalized.isActive = isActive;
     }
 
-    const isPopular = toBoolean(pickValue(payload, 'isPopular', 'is_popular'));
+    const isPopular = toBoolean(pickValue(payload, 'is_popular', 'isPopular'));
     if (isPopular !== undefined) {
         normalized.isPopular = isPopular;
     }
 
     const isFeatured = toBoolean(
-        pickValue(payload, 'isFeatured', 'is_featured'),
+        pickValue(payload, 'is_featured', 'isFeatured'),
     );
     if (isFeatured !== undefined) {
         normalized.isFeatured = isFeatured;
@@ -255,21 +255,21 @@ export function normalizeAdminServiceInput(
     }
 
     const requiredDocumentsList = toJsonLike(
-        pickValue(payload, 'requiredDocumentsList', 'required_documents_list'),
+        pickValue(payload, 'required_documents_list', 'requiredDocumentsList'),
     );
     if (requiredDocumentsList !== undefined) {
         normalized.requiredDocumentsList = requiredDocumentsList;
     }
 
     const extraDocuments = toJsonLike(
-        pickValue(payload, 'extraDocuments', 'extra_documents'),
+        pickValue(payload, 'extra_documents', 'extraDocuments'),
     );
     if (extraDocuments !== undefined) {
         normalized.extraDocuments = extraDocuments;
     }
 
     const adminNotes = toNullableString(
-        pickValue(payload, 'adminNotes', 'admin_notes'),
+        pickValue(payload, 'admin_notes', 'adminNotes'),
     );
     if (adminNotes !== undefined) {
         normalized.adminNotes = adminNotes;
