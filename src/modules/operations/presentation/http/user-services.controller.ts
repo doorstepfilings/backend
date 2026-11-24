@@ -40,7 +40,7 @@ export class UserServicesController {
 
     @UseGuards(JwtAuthGuard)
     @Post('apply')
-    @UseInterceptors(AnyFilesInterceptor())
+    @UseInterceptors(AnyFilesInterceptor({ limits: { fileSize: 10 * 1024 * 1024, files: 20 } }))
     async applyForService(
         @CurrentAuthUser() authUser: { userId: number },
         @Body() body: Record<string, unknown>,
@@ -63,7 +63,7 @@ export class UserServicesController {
 
     @UseGuards(JwtAuthGuard)
     @Post('my-services/:id/documents')
-    @UseInterceptors(AnyFilesInterceptor())
+    @UseInterceptors(AnyFilesInterceptor({ limits: { fileSize: 10 * 1024 * 1024, files: 20 } }))
     async uploadMyDocuments(
         @CurrentAuthUser() authUser: { userId: number },
         @Param('id', ParseIntPipe) id: number,

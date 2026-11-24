@@ -76,7 +76,7 @@ export class AccountantController {
     }
 
     @Post('service-requests/:id/documents')
-    @UseInterceptors(AnyFilesInterceptor())
+    @UseInterceptors(AnyFilesInterceptor({ limits: { fileSize: 10 * 1024 * 1024, files: 20 } }))
     async uploadDocuments(
         @Req() req: any,
         @Param('id', ParseIntPipe) id: number,
